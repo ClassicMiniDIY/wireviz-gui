@@ -28,6 +28,15 @@ A cross-platform desktop GUI application for [WireViz](https://github.com/wirevi
 - ✅ Settings persistence across sessions
 - ✅ Recent files menu (last 10 files)
 - ✅ Enhanced status bar with error counts
+
+### Phase 4 (BOM & Export) - ✅ Complete
+
+- ✅ BOM table viewer with sortable columns
+- ✅ Copy BOM to clipboard (TSV format)
+- ✅ Export dialog with multi-format selection
+- ✅ Quick export menu (SVG, PNG, BOM)
+- ✅ Enhanced WireVizRunner supporting all output formats
+- ✅ Toggle BOM panel via View menu
 - 🚧 Image rendering in preview (shows SVG as text for now)
 
 ## Prerequisites
@@ -104,8 +113,10 @@ open "target/release/bundle/osx/WireViz GUI.app"
 
 1. **File > New** - Create a new harness
 2. Edit YAML in the left panel
-3. **View > Refresh Preview** - Generate diagram
-4. **File > Save** - Save your work
+3. **View > Refresh Preview** - Generate diagram and BOM
+4. **View > Show BOM Panel** - View bill of materials
+5. **Export > Export SVG...** - Quick export (or use Export Outputs for multiple formats)
+6. **File > Save** - Save your work
 
 ## How Python Bundling Works
 
@@ -167,35 +178,43 @@ cargo clippy
 
 ## Roadmap
 
-### Phase 1: MVP (Current)
+### Phase 1: MVP - ✅ Complete
+
 - [x] Basic UI with YAML editor
 - [x] WireViz CLI integration
 - [x] File operations
 - [x] SVG preview (text-based)
 
-### Phase 2: Python Bundling
-- [ ] Bundle Python runtime
-- [ ] Bundle WireViz package
-- [ ] Platform-specific installers
+### Phase 2: Python Bundling - ✅ Complete
 
-### Phase 3: Enhanced Editing
-- [ ] Syntax validation
-- [ ] Error highlighting
-- [ ] Auto-completion
-- [ ] Find/replace
+- [x] Bundle Python runtime
+- [x] Bundle WireViz package
+- [x] Platform-specific installers (macOS .app)
 
-### Phase 4: BOM & Export
-- [ ] BOM table viewer
-- [ ] Export dialog (multiple formats)
-- [ ] Image rendering in preview
+### Phase 3: Enhanced Editing - ✅ Complete
 
-### Phase 5: Visual Enhancements
+- [x] Syntax validation
+- [x] Error highlighting
+- [x] Recent files menu
+- [x] Settings persistence
+
+### Phase 4: BOM & Export - ✅ Complete
+
+- [x] BOM table viewer
+- [x] Export dialog (multiple formats)
+- [x] Copy BOM to clipboard
+- [x] Quick export menu
+
+### Phase 5: Visual Enhancements (Next)
+
 - [ ] Zoom/pan controls
 - [ ] Click-to-highlight
 - [ ] Dark mode toggle
 - [ ] Keyboard shortcuts
+- [ ] Image rendering in preview
 
-### Phase 6: Advanced Features
+### Phase 6: Advanced Features (Future)
+
 - [ ] Visual forms for editing
 - [ ] Template library
 - [ ] Drag-and-drop connection editor

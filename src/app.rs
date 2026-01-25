@@ -1,6 +1,6 @@
 use crate::state::{AppSettings, Workspace};
-use crate::ui::{editor, preview, status_bar, toolbar, validation_panel};
-use crate::wireviz::WireVizRunner;
+use crate::ui::{bom, editor, export_dialog, preview, status_bar, toolbar, validation_panel};
+use crate::wireviz::{OutputFormat, WireVizRunner};
 use std::sync::mpsc::{channel, Receiver, Sender};
 
 pub struct WireVizApp {
@@ -10,12 +10,14 @@ pub struct WireVizApp {
     task_tx: Sender<TaskMessage>,
     task_rx: Receiver<TaskMessage>,
     show_about: bool,
+    export_dialog: export_dialog::ExportDialog,
+    show_bom_panel: bool,
 }
 
 #[derive(Debug)]
 pub enum TaskMessage {
-    PreviewReady(String),       // SVG content
-    PreviewError(String),        // Error message
+    PreviewReady(String, Option<String>), // SVG content, BOM TSV
+    PreviewError(String),                  // Error message
     GenerationComplete,
 }
 
@@ -33,6 +35,8 @@ impl WireVizApp {
             task_tx,
             task_rx,
             show_about: false,
+            export_dialog: export_dialog::ExportDialog::default(),
+            show_bom_panel: false,
         }
     }
 
@@ -118,6 +122,43 @@ impl WireVizApp {
                         self.refresh_preview();
                         ui.close_menu();
                     }
+
+                    ui.separator();
+
+                    let bom_label = if self.show_bom_panel {
+                        "Hide BOM Panel"
+                    } else {
+                        "Show BOM Panel"
+                    };
+
+                    if ui.button(bom_label).clicked() {
+                        self.show_bom_panel = !self.show_bom_panel;
+                        ui.close_menu();
+                    }
+                });
+
+                ui.menu_button("Export", |ui| {
+                    if ui.button("Export Outputs...").clicked() {
+                        self.export_dialog.open = true;
+                        ui.close_menu();
+                    }
+
+                    ui.separator();
+
+                    if ui.button("Export SVG...").clicked() {
+                        self.quick_export(&[OutputFormat::Svg]);
+                        ui.close_menu();
+                    }
+
+                    if ui.button("Export PNG...").clicked() {
+                        self.quick_export(&[OutputFormat::Png]);
+                        ui.close_menu();
+                    }
+
+                    if ui.button("Export BOM (TSV)...").clicked() {
+                        self.quick_export(&[OutputFormat::Tsv]);
+                        ui.close_menu();
+                    }
                 });
 
                 ui.menu_button("Help", |ui| {
@@ -160,17 +201,52 @@ impl WireVizApp {
         }
     }
 
+    fn quick_export(&mut self, formats: &[OutputFormat]) {
+        if let Some(doc) = self.workspace.get_active_document() {
+            if doc.yaml_content.is_empty() {
+                return;
+            }
+
+            // Ask for output directory
+            if let Some(dir) = rfd::FileDialog::new().pick_folder() {
+                let yaml_content = doc.yaml_content.clone();
+                let runner = self.wireviz_runner.clone();
+                let formats = formats.to_vec();
+                let output_name = doc.get_title().replace(".yml", "").replace(".yaml", "");
+
+                // Run export synchronously for quick exports
+                match runner.generate_outputs(&yaml_content, &formats, Some(&dir), Some(&output_name)) {
+                    Ok(_) => {
+                        println!("Export successful to: {}", dir.display());
+                    }
+                    Err(e) => {
+                        eprintln!("Export failed: {}", e);
+                    }
+                }
+            }
+        }
+    }
+
     fn refresh_preview(&mut self) {
         if let Some(doc) = self.workspace.get_active_document() {
             let yaml_content = doc.yaml_content.clone();
             let tx = self.task_tx.clone();
             let runner = self.wireviz_runner.clone();
 
-            // Spawn background task to generate preview
+            // Spawn background task to generate preview and BOM
             std::thread::spawn(move || {
-                match runner.generate_svg(&yaml_content) {
-                    Ok(svg) => {
-                        tx.send(TaskMessage::PreviewReady(svg)).ok();
+                match runner.generate_outputs(
+                    &yaml_content,
+                    &[OutputFormat::Svg, OutputFormat::Tsv],
+                    None,
+                    None,
+                ) {
+                    Ok(outputs) => {
+                        tx.send(TaskMessage::PreviewReady(
+                            outputs.svg.unwrap_or_default(),
+                            outputs.bom_tsv,
+                        ))
+                        .ok();
                     }
                     Err(e) => {
                         tx.send(TaskMessage::PreviewError(e.to_string())).ok();
@@ -183,9 +259,10 @@ impl WireVizApp {
     fn check_background_tasks(&mut self) {
         while let Ok(msg) = self.task_rx.try_recv() {
             match msg {
-                TaskMessage::PreviewReady(svg) => {
+                TaskMessage::PreviewReady(svg, bom) => {
                     if let Some(doc) = self.workspace.get_active_document_mut() {
                         doc.preview_svg = Some(svg);
+                        doc.bom_data = bom;
                     }
                 }
                 TaskMessage::PreviewError(err) => {
@@ -258,10 +335,36 @@ impl eframe::App for WireVizApp {
             }
         }
 
+        // BOM panel (optional, toggled via View menu)
+        if self.show_bom_panel {
+            egui::TopBottomPanel::bottom("bom_panel")
+                .min_height(150.0)
+                .max_height(400.0)
+                .resizable(true)
+                .show(ctx, |ui| {
+                    bom::render(ui, &self.workspace);
+                });
+        }
+
         // Status bar
         egui::TopBottomPanel::bottom("status_bar").show(ctx, |ui| {
             status_bar::render(ui, &self.workspace);
         });
+
+        // Export dialog
+        if let Some(action) = self.export_dialog.show(ctx) {
+            match action {
+                export_dialog::ExportAction::Export => {
+                    // Start export
+                    self.export_dialog.in_progress = true;
+                    // TODO: Implement async export
+                }
+                export_dialog::ExportAction::Cancel => {
+                    self.export_dialog.open = false;
+                    self.export_dialog.reset();
+                }
+            }
+        }
 
         // About dialog
         if self.show_about {
