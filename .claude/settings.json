@@ -1,0 +1,18 @@
+{
+  "permissions": {
+    "allow": [
+      "Read(//Users/colegentry/Development/**)",
+      "Bash(find:*)",
+      "Bash(cargo init:*)",
+      "Bash(cargo check:*)",
+      "Bash(cargo run:*)",
+      "Bash(cargo build:*)",
+      "Bash(chmod:*)",
+      "Bash(/Users/colegentry/Development/wireviz-gui/target/release/bundle/python/bin/wireviz:*)",
+      "Bash(cargo install:*)"
+    ],
+    "additionalDirectories": [
+      "/Users/colegentry/Development"
+    ]
+  }
+}

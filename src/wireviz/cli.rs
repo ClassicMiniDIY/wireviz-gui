@@ -4,26 +4,76 @@ use std::process::Command;
 
 #[derive(Clone)]
 pub struct WireVizRunner {
+    python_path: Option<PathBuf>,
     wireviz_path: Option<PathBuf>,
+    use_bundled: bool,
 }
 
 impl Default for WireVizRunner {
     fn default() -> Self {
-        Self { wireviz_path: None }
+        Self {
+            python_path: None,
+            wireviz_path: None,
+            use_bundled: false,
+        }
     }
 }
 
 impl WireVizRunner {
     pub fn new() -> Result<Self> {
-        // Try to find wireviz in PATH
+        // Try to find bundled Python first
+        if let Some((python, wireviz)) = Self::find_bundled_python() {
+            eprintln!("Using bundled Python and WireViz");
+            return Ok(Self {
+                python_path: Some(python),
+                wireviz_path: Some(wireviz),
+                use_bundled: true,
+            });
+        }
+
+        // Fall back to system wireviz
         let wireviz_path = which::which("wireviz").ok();
 
         if wireviz_path.is_none() {
             eprintln!("Warning: wireviz command not found in PATH");
             eprintln!("Please install WireViz: pip install wireviz");
+        } else {
+            eprintln!("Using system WireViz");
         }
 
-        Ok(Self { wireviz_path })
+        Ok(Self {
+            python_path: None,
+            wireviz_path,
+            use_bundled: false,
+        })
+    }
+
+    fn find_bundled_python() -> Option<(PathBuf, PathBuf)> {
+        // Get executable directory
+        let exe_path = std::env::current_exe().ok()?;
+        let exe_dir = exe_path.parent()?;
+
+        // Look for bundled Python in various locations
+        let possible_locations = vec![
+            // Development build
+            exe_dir.join("../../../bundle/python"),
+            // Release build
+            exe_dir.join("../../bundle/python"),
+            // macOS .app bundle
+            exe_dir.join("../Resources/python"),
+        ];
+
+        for python_dir in possible_locations {
+            let python_bin = python_dir.join("bin/python3");
+            let wireviz_bin = python_dir.join("bin/wireviz");
+
+            if python_bin.exists() && wireviz_bin.exists() {
+                eprintln!("Found bundled Python at: {:?}", python_dir);
+                return Some((python_bin, wireviz_bin));
+            }
+        }
+
+        None
     }
 
     pub fn generate_svg(&self, yaml_content: &str) -> Result<String> {
@@ -41,8 +91,20 @@ impl WireVizRunner {
         let temp_yaml = temp_dir.join("temp.yml");
         std::fs::write(&temp_yaml, yaml_content)?;
 
-        // Run wireviz command
-        let output = Command::new(self.wireviz_path.as_ref().unwrap())
+        // Build command based on whether we're using bundled or system Python
+        let mut cmd = if self.use_bundled {
+            // Use bundled Python to run wireviz module
+            let mut c = Command::new(self.python_path.as_ref().unwrap());
+            c.arg("-m")
+             .arg("wireviz");
+            c
+        } else {
+            // Use system wireviz command
+            Command::new(self.wireviz_path.as_ref().unwrap())
+        };
+
+        // Add wireviz arguments
+        let output = cmd
             .arg(&temp_yaml)
             .arg("-f")
             .arg("s") // SVG only
@@ -55,7 +117,12 @@ impl WireVizRunner {
         // Check if command succeeded
         if !output.status.success() {
             let stderr = String::from_utf8_lossy(&output.stderr);
-            return Err(anyhow::anyhow!("WireViz error: {}", stderr));
+            let stdout = String::from_utf8_lossy(&output.stdout);
+            return Err(anyhow::anyhow!(
+                "WireViz error:\nStderr: {}\nStdout: {}",
+                stderr,
+                stdout
+            ));
         }
 
         // Read generated SVG

@@ -49,3 +49,11 @@ strip = true
 
 [profile.dev]
 opt-level = 0
+
+[package.metadata.bundle]
+name = "WireViz GUI"
+identifier = "com.wireviz.gui"
+short_description = "GUI for WireViz cable documentation"
+long_description = "A cross-platform desktop GUI application for WireViz - the cable and wiring harness documentation tool."
+category = "Developer Tool"
+resources = ["target/release/bundle/python"]
