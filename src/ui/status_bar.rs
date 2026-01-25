@@ -3,10 +3,15 @@ use crate::state::Workspace;
 pub fn render(ui: &mut egui::Ui, workspace: &Workspace) {
     ui.horizontal(|ui| {
         if let Some(doc) = workspace.get_active_document() {
-            // Show file status
-            if doc.last_error.is_some() {
-                ui.colored_label(egui::Color32::RED, "✗ Error");
-            } else if doc.preview_svg.is_some() {
+            // Show validation status
+            let error_count = doc.error_count();
+            let warning_count = doc.warning_count();
+
+            if error_count > 0 {
+                ui.colored_label(egui::Color32::RED, format!("✗ {} error{}", error_count, if error_count == 1 { "" } else { "s" }));
+            } else if warning_count > 0 {
+                ui.colored_label(egui::Color32::from_rgb(255, 165, 0), format!("⚠ {} warning{}", warning_count, if warning_count == 1 { "" } else { "s" }));
+            } else if doc.parsed_harness.is_some() {
                 ui.colored_label(egui::Color32::GREEN, "✓ Valid");
             } else {
                 ui.label("○ Not validated");

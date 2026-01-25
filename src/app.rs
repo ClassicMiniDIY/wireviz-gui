@@ -1,11 +1,12 @@
-use crate::state::{Document, Workspace};
-use crate::ui::{editor, preview, status_bar, toolbar};
+use crate::state::{AppSettings, Workspace};
+use crate::ui::{editor, preview, status_bar, toolbar, validation_panel};
 use crate::wireviz::WireVizRunner;
 use std::sync::mpsc::{channel, Receiver, Sender};
 
 pub struct WireVizApp {
     workspace: Workspace,
     wireviz_runner: WireVizRunner,
+    settings: AppSettings,
     task_tx: Sender<TaskMessage>,
     task_rx: Receiver<TaskMessage>,
     show_about: bool,
@@ -28,6 +29,7 @@ impl WireVizApp {
                 eprintln!("Warning: WireViz not found: {}", e);
                 WireVizRunner::default()
             }),
+            settings: AppSettings::load(),
             task_tx,
             task_rx,
             show_about: false,
@@ -54,8 +56,50 @@ impl WireVizApp {
                         self.save_current_document_as();
                         ui.close_menu();
                     }
+
+                    // Recent files
+                    if !self.settings.recent_files.is_empty() {
+                        ui.separator();
+                        ui.label("Recent Files:");
+
+                        let recent_files = self.settings.recent_files.clone();
+                        let mut file_to_open = None;
+
+                        for (idx, path) in recent_files.iter().enumerate() {
+                            if idx >= 10 {
+                                break;
+                            }
+
+                            let filename = path
+                                .file_name()
+                                .and_then(|n| n.to_str())
+                                .unwrap_or("Unknown");
+
+                            if ui.button(filename).clicked() {
+                                file_to_open = Some(path.clone());
+                                ui.close_menu();
+                            }
+                        }
+
+                        if let Some(path) = file_to_open {
+                            if let Err(e) = self.workspace.open_document(path.clone()) {
+                                eprintln!("Failed to open file: {}", e);
+                                self.settings.remove_recent_file(&path);
+                            } else {
+                                self.refresh_preview();
+                            }
+                        }
+
+                        if ui.button("Clear Recent Files").clicked() {
+                            self.settings.clear_recent_files();
+                            self.settings.save().ok();
+                            ui.close_menu();
+                        }
+                    }
+
                     ui.separator();
                     if ui.button("Quit").clicked() {
+                        self.settings.save().ok();
                         ctx.send_viewport_cmd(egui::ViewportCommand::Close);
                     }
                 });
@@ -160,6 +204,14 @@ impl eframe::App for WireVizApp {
         // Check for background task completions
         self.check_background_tasks();
 
+        // Validate active document if needed (debounced)
+        if let Some(doc) = self.workspace.get_active_document_mut() {
+            if doc.should_validate() {
+                doc.validate();
+                ctx.request_repaint(); // Repaint to show validation results
+            }
+        }
+
         // Menu bar
         self.handle_menu_bar(ctx);
 
@@ -192,6 +244,19 @@ impl eframe::App for WireVizApp {
                 });
             });
         });
+
+        // Validation panel (show if there are errors/warnings)
+        if let Some(doc) = self.workspace.get_active_document() {
+            if !doc.validation_errors.is_empty() {
+                egui::TopBottomPanel::bottom("validation_panel")
+                    .min_height(100.0)
+                    .max_height(200.0)
+                    .resizable(true)
+                    .show(ctx, |ui| {
+                        validation_panel::render(ui, &self.workspace);
+                    });
+            }
+        }
 
         // Status bar
         egui::TopBottomPanel::bottom("status_bar").show(ctx, |ui| {

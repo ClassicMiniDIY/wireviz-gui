@@ -19,6 +19,15 @@ A cross-platform desktop GUI application for [WireViz](https://github.com/wirevi
 - ✅ WireViz bundled with release builds
 - ✅ Smart Python detection (bundled → system fallback)
 - ✅ macOS .app bundle generation
+
+### Phase 3 (Enhanced Editing) - ✅ Complete
+
+- ✅ Real-time YAML validation (debounced 500ms)
+- ✅ WireViz-specific semantic validation
+- ✅ Error/warning display panel with line numbers
+- ✅ Settings persistence across sessions
+- ✅ Recent files menu (last 10 files)
+- ✅ Enhanced status bar with error counts
 - 🚧 Image rendering in preview (shows SVG as text for now)
 
 ## Prerequisites
