@@ -2,7 +2,7 @@
   <div class="app-shell">
     <header class="topnav">
       <div class="brand">
-        <img :src="wheelSrc" alt="" class="wheel" />
+        <img src="/brand/logo-wheel.svg" alt="" class="wheel" />
         <div class="brand-text">
           <span class="eyebrow">Part of Classic Mini DIY</span>
           <h1 class="brand-title">WireViz GUI</h1>
@@ -147,14 +147,6 @@ const result = ref<ParseResult | null>(null)
 
 const { theme, toggle: toggleTheme } = useTheme()
 
-// Swap the wheel-mark PNG when the theme flips so it stays legible
-// against the header surface. The SVG version of the lockup is shape-
-// only and disappears on the dark background, so we use the rendered
-// black/white PNG variants instead.
-const wheelSrc = computed(() =>
-  theme.value === 'cmdiy-dark' ? '/brand/logo-wheel-white.png' : '/brand/logo-wheel-black.png',
-)
-
 const { data: health } = await useFetch<{ wireviz: string }>('/api/wireviz/health', {
   default: () => null,
 })
@@ -257,10 +249,14 @@ onMounted(() => {
   gap: var(--space-3);
 }
 .wheel {
-  width: 38px;
   height: 38px;
+  width: auto;
   display: block;
+  /* The wheel SVG is solid black. Flip it white in dark mode so it
+     stays legible against the dark header surface. */
+  transition: filter var(--t-fast);
 }
+[data-theme='cmdiy-dark'] .wheel { filter: invert(1); }
 .brand-text {
   display: flex;
   flex-direction: column;
