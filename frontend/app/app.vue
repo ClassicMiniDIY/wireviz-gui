@@ -79,6 +79,7 @@
             :options="monacoOptions"
             :theme="monacoTheme"
             @keydown="onEditorKeydown"
+            @load="onEditorLoad"
           />
           <template #fallback>
             <pre class="yaml-editor-fallback">{{ yamlSource }}</pre>
@@ -207,6 +208,28 @@ function onEditorKeydown(e: KeyboardEvent) {
     void render()
   }
 }
+
+let completionDispose: (() => void) | null = null
+let hoverDispose: (() => void) | null = null
+
+async function onEditorLoad() {
+  // Register the WireViz schema-driven completion + hover providers
+  // against the singleton Monaco runtime. We do this on @load (once)
+  // rather than in a Nuxt plugin because the providers must run
+  // against the exact monaco instance the editor uses.
+  if (completionDispose || hoverDispose) return
+  const { registerWirevizCompletion, registerWirevizHover } = await import(
+    '~/composables/useWirevizCompletion'
+  )
+  const monaco = await useMonaco()
+  completionDispose = registerWirevizCompletion(monaco).dispose
+  hoverDispose = registerWirevizHover(monaco).dispose
+}
+
+onBeforeUnmount(() => {
+  completionDispose?.()
+  hoverDispose?.()
+})
 
 const templatesOpen = ref(false)
 

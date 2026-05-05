@@ -1,0 +1,280 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://classicminidiy.com/schemas/wireviz.schema.json",
+  "title": "WireViz harness",
+  "description": "Schema for WireViz YAML — describes connectors, cables, and how they connect.\n\nSee https://github.com/wireviz/WireViz/blob/master/docs/syntax.md for the full reference.",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "metadata": {
+      "type": "object",
+      "description": "Free-form metadata. Common keys are description, title, author. Surfaces in the rendered HTML output.",
+      "additionalProperties": true
+    },
+    "options": {
+      "type": "object",
+      "description": "Diagram-wide rendering options.",
+      "additionalProperties": true,
+      "properties": {
+        "fontname": {
+          "type": "string",
+          "description": "GraphViz font family. Default: arial."
+        },
+        "bgcolor": {
+          "$ref": "#/definitions/colorCode",
+          "description": "Background color of the whole diagram. Default: WH (white)."
+        },
+        "color_mode": {
+          "type": "string",
+          "enum": ["FULL", "SHORT", "HEX"],
+          "description": "How wire colors are labelled. SHORT shows IEC 2-letter codes (default), FULL spells them out, HEX uses #rrggbb."
+        },
+        "mini_bom_mode": {
+          "type": "boolean",
+          "description": "Compact BOM table layout."
+        },
+        "show_options": {
+          "type": "boolean"
+        },
+        "output_dpi": {
+          "type": "number",
+          "description": "PNG output resolution. Default: 96."
+        }
+      }
+    },
+    "tweak": {
+      "type": "object",
+      "description": "Raw GraphViz overrides applied after normal emission. Power-user escape hatch.",
+      "additionalProperties": true
+    },
+    "connectors": {
+      "type": "object",
+      "description": "Map of designator → connector definition. Each key (e.g. X1, J1) is the connector's name as it appears in the diagram.",
+      "additionalProperties": { "$ref": "#/definitions/connector" }
+    },
+    "cables": {
+      "type": "object",
+      "description": "Map of designator → cable definition. Each key (e.g. W1) is the cable's name as it appears in the diagram.",
+      "additionalProperties": { "$ref": "#/definitions/cable" }
+    },
+    "connections": {
+      "type": "array",
+      "description": "List of connection sets. Each set is itself a list that alternates between connector references (e.g. {X1: [1,2,3]}) and cable/arrow references — pin counts on each side must match.",
+      "items": {
+        "type": "array",
+        "items": true
+      }
+    },
+    "additional_bom_items": {
+      "type": "array",
+      "description": "Extra BOM entries that don't appear in the diagram itself (labels, sleeves, hardware).",
+      "items": {
+        "type": "object",
+        "properties": {
+          "description": { "type": "string" },
+          "qty": { "type": "number" },
+          "unit": { "type": "string" },
+          "manufacturer": { "type": "string" },
+          "mpn": { "type": "string" },
+          "supplier": { "type": "string" },
+          "spn": { "type": "string" },
+          "pn": { "type": "string" },
+          "designators": {
+            "type": "array",
+            "items": { "type": "string" }
+          }
+        },
+        "additionalProperties": true
+      }
+    }
+  },
+  "definitions": {
+    "connector": {
+      "type": "object",
+      "description": "A single connector (plug, socket, ferrule, ring terminal, etc.).",
+      "additionalProperties": true,
+      "properties": {
+        "type": {
+          "type": "string",
+          "description": "Connector family — e.g. \"D-Sub\", \"Molex KK 254\", \"H4 sealed beam\"."
+        },
+        "subtype": {
+          "type": "string",
+          "description": "Variant within the type — e.g. \"male\", \"female\", \"3-pin\"."
+        },
+        "category": {
+          "type": "string",
+          "description": "Optional grouping (e.g. \"ferrule\")."
+        },
+        "style": {
+          "type": "string",
+          "enum": ["simple"],
+          "description": "Set to \"simple\" for ferrules / single-pin terminals — they render as pills rather than tables."
+        },
+        "pincount": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "Number of pins. Use this OR pinlabels — pincount auto-numbers them, pinlabels names them."
+        },
+        "pinlabels": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "Named pins (e.g. [GND, VCC, RX, TX]). Implies pincount = length of this list."
+        },
+        "pins": {
+          "type": "array",
+          "items": { "type": ["string", "integer"] },
+          "description": "Custom pin identifiers if you want non-sequential numbering (e.g. [A1, A2, B1])."
+        },
+        "pincolors": {
+          "type": "array",
+          "items": { "$ref": "#/definitions/colorCode" },
+          "description": "Per-pin color stripe (uses IEC 2-letter codes)."
+        },
+        "color": { "$ref": "#/definitions/colorCode", "description": "Body color of the connector." },
+        "bgcolor": { "$ref": "#/definitions/colorCode" },
+        "bgcolor_title": { "$ref": "#/definitions/colorCode" },
+        "show_name": { "type": "boolean" },
+        "show_pincount": { "type": "boolean" },
+        "hide_disconnected_pins": { "type": "boolean" },
+        "manufacturer": { "type": "string" },
+        "mpn": { "type": "string", "description": "Manufacturer part number." },
+        "supplier": { "type": "string" },
+        "spn": { "type": "string", "description": "Supplier part number." },
+        "pn": { "type": "string", "description": "Internal part number." },
+        "notes": { "type": "string", "description": "Free-form notes shown on the connector node." },
+        "image": { "$ref": "#/definitions/image" },
+        "additional_components": {
+          "type": "array",
+          "items": { "$ref": "#/definitions/additionalComponent" },
+          "description": "Extra parts associated with this connector (crimps, pins) — appear in the BOM."
+        },
+        "loops": {
+          "type": "array",
+          "items": {
+            "type": "array",
+            "items": { "type": ["string", "integer"] }
+          },
+          "description": "Pairs of pins to draw as loops back to the connector itself (jumpers)."
+        }
+      }
+    },
+    "cable": {
+      "type": "object",
+      "description": "A cable, bundle, or single wire run.",
+      "additionalProperties": true,
+      "properties": {
+        "category": {
+          "type": "string",
+          "enum": ["bundle"],
+          "description": "Set to \"bundle\" for individually-coloured wires not bound by a common jacket."
+        },
+        "type": { "type": "string", "description": "Cable family — e.g. \"CAT6\", \"shielded twisted pair\"." },
+        "wirecount": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "Number of conductors. Implied by colors / color_code if those are set."
+        },
+        "length": {
+          "type": "number",
+          "description": "Cable length. Pair with length_unit (default: m)."
+        },
+        "length_unit": {
+          "type": "string",
+          "examples": ["m", "cm", "mm", "in", "ft"]
+        },
+        "gauge": {
+          "type": ["string", "number"],
+          "description": "Wire gauge — accepts \"0.25 mm2\", \"24 AWG\", or a bare number with gauge_unit set."
+        },
+        "gauge_unit": {
+          "type": "string",
+          "enum": ["mm2", "AWG"]
+        },
+        "show_equiv": {
+          "type": "boolean",
+          "description": "Auto-calculate the AWG↔mm² equivalent next to the gauge."
+        },
+        "color_code": {
+          "type": "string",
+          "enum": ["DIN", "IEC", "BW", "TEL", "TELALT", "T568A", "T568B"],
+          "description": "Standard color scheme — fills `colors` automatically.\n\n- DIN 47100 (European, ~64 colors)\n- IEC 60757 (10 colors)\n- BW (black/white)\n- TEL (25-pair POTS)\n- TELALT (25-pair, alt order)\n- T568A / T568B (Ethernet)"
+        },
+        "colors": {
+          "type": "array",
+          "items": { "$ref": "#/definitions/colorCode" },
+          "description": "Explicit per-wire colors (IEC 2-letter codes). Overrides color_code."
+        },
+        "wirelabels": {
+          "type": "array",
+          "items": { "type": ["string", "integer"] }
+        },
+        "shield": {
+          "oneOf": [
+            { "type": "boolean" },
+            { "$ref": "#/definitions/colorCode" }
+          ],
+          "description": "true = unlabelled shield drain. A color code uses that as the shield color."
+        },
+        "color": { "$ref": "#/definitions/colorCode" },
+        "bgcolor": { "$ref": "#/definitions/colorCode" },
+        "manufacturer": { "type": ["string", "array"], "items": { "type": "string" } },
+        "mpn": { "type": ["string", "array"], "items": { "type": "string" } },
+        "supplier": { "type": ["string", "array"], "items": { "type": "string" } },
+        "spn": { "type": ["string", "array"], "items": { "type": "string" } },
+        "pn": { "type": ["string", "array"], "items": { "type": "string" } },
+        "notes": { "type": "string" },
+        "image": { "$ref": "#/definitions/image" },
+        "additional_components": {
+          "type": "array",
+          "items": { "$ref": "#/definitions/additionalComponent" }
+        }
+      }
+    },
+    "image": {
+      "type": "object",
+      "description": "Inline image attached to a connector / cable node.",
+      "properties": {
+        "src": { "type": "string", "description": "Relative or absolute path to the image." },
+        "scale": { "type": ["string", "number"] },
+        "width": { "type": "number" },
+        "height": { "type": "number" },
+        "fixedsize": { "type": "boolean" },
+        "bgcolor": { "$ref": "#/definitions/colorCode" },
+        "caption": { "type": "string" }
+      },
+      "required": ["src"]
+    },
+    "additionalComponent": {
+      "type": "object",
+      "description": "Extra BOM line attached to this part (crimps, pins, sleeves).",
+      "properties": {
+        "type": { "type": "string" },
+        "subtype": { "type": "string" },
+        "qty": { "type": "number" },
+        "qty_multiplier": {
+          "type": "string",
+          "enum": ["pincount", "populated", "unpopulated", "wirecount", "terminations", "length", "total_length"],
+          "description": "Auto-multiply qty by a derived count."
+        },
+        "unit": { "type": "string" },
+        "manufacturer": { "type": "string" },
+        "mpn": { "type": "string" },
+        "supplier": { "type": "string" },
+        "spn": { "type": "string" },
+        "pn": { "type": "string" },
+        "bgcolor": { "$ref": "#/definitions/colorCode" }
+      },
+      "required": ["type"]
+    },
+    "colorCode": {
+      "type": "string",
+      "description": "IEC 60757 two-letter color code. Combine codes for multi-colour wires (e.g. WHGN = white/green stripe). See https://en.wikipedia.org/wiki/IEC_60757 for the full set.",
+      "examples": [
+        "BK", "WH", "GY", "PK", "RD", "OG", "YE", "OL", "GN", "TQ",
+        "LB", "BU", "VT", "PU", "BN", "BG", "IV", "SL", "CU", "GD",
+        "WHGN", "BNGN", "WHYE", "YEBN", "WHRD", "BNRD"
+      ]
+    }
+  }
+}
