@@ -15,7 +15,7 @@ export default defineNuxtConfig({
       htmlAttrs: { 'data-theme': 'cmdiy', lang: 'en' },
       title: 'WireViz GUI · Classic Mini DIY',
       link: [
-        { rel: 'icon', type: 'image/svg+xml', href: '/brand/logo-wheel.svg' },
+        { rel: 'icon', type: 'image/png', href: '/brand/ios-icon.png' },
         // Outfit — primary sans across the CMDIY ecosystem.
         { rel: 'preconnect', href: 'https://fonts.googleapis.com' },
         {

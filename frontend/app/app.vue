@@ -2,7 +2,7 @@
   <div class="app-shell">
     <header class="topnav">
       <div class="brand">
-        <img src="/brand/logo-wheel.svg" alt="" class="wheel" />
+        <img src="/brand/ios-icon.png" alt="" class="wheel" />
         <div class="brand-text">
           <span class="eyebrow">Part of Classic Mini DIY</span>
           <h1 class="brand-title">WireViz GUI</h1>
@@ -249,14 +249,15 @@ onMounted(() => {
   gap: var(--space-3);
 }
 .wheel {
+  width: 38px;
   height: 38px;
-  width: auto;
   display: block;
-  /* The wheel SVG is solid black. Flip it white in dark mode so it
-     stays legible against the dark header surface. */
-  transition: filter var(--t-fast);
+  border-radius: 8px;
+  /* ios-icon.png is the wheel mark on layered olive bands (the same
+     square badge used as the iOS app icon). It's self-contained with
+     its own background, so it reads cleanly against either header
+     surface — no per-theme asset swap needed. */
 }
-[data-theme='cmdiy-dark'] .wheel { filter: invert(1); }
 .brand-text {
   display: flex;
   flex-direction: column;
