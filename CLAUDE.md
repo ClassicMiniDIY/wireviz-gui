@@ -58,9 +58,9 @@ browser  ──FormData──>  /api/wireviz/parse-multipart   ──>  /parse-m
 
 ### Frontend (`frontend/`)
 
-- **`app/app.vue`** — the entire UI: Monaco editor on the left, SVG preview on the right, asset chip row above the editor, drag-drop overlay over the editor card. `⌘⏎` to render. Routes incoming files by extension via `ingestFiles`: `.wvz` unpacks into editor + asset map, `.yml/.yaml` loads as the editor buffer, `.png` tries iTXt extraction first then falls back to "attach as asset" if no embedded YAML, any other image attaches directly. The render call branches on `assets.count`: empty → JSON `/parse`, populated → multipart `/parse-multipart`. Same branch on PNG download.
+- **`app/app.vue`** — the entire UI: Monaco editor on the left, SVG preview on the right, asset chip row above the editor, drag-drop overlay over the editor card. `⌘⏎` to render. Routes incoming files by extension via `ingestFiles`: `.zip` unpacks into editor + asset map, `.yml/.yaml` loads as the editor buffer, `.png` tries iTXt extraction first then falls back to "attach as asset" if no embedded YAML, any other image attaches directly. The render call branches on `assets.count`: empty → JSON `/parse`, populated → multipart `/parse-multipart`. Same branch on PNG download.
 - **`app/composables/useAssets.ts`** — reactive `Map<filename, AssetEntry>` keyed by basename. Last-write-wins on duplicate names. Exposes `add` / `remove` / `clear` / `replaceAll` plus a `buildAssetForm(fields, assets)` helper that constructs the `FormData` the sidecar's multipart endpoints expect (yaml + non-file fields + repeated `files` parts).
-- **`app/composables/useWvzBundle.ts`** — `.wvz` pack / unpack via JSZip. Bundle layout is a flat zip: `harness.yml` at the root, image files alongside it. Flat layout means `image: src: foo.png` resolves against the bundle root without rewriting paths on save. Tolerant unpacker: prefers `harness.yml`, falls back to first `.yml/.yaml`, flattens any nested image paths to basenames.
+- **`app/composables/useZipBundle.ts`** — `.zip` pack / unpack via JSZip. Bundle layout is a flat zip: `harness.yml` at the root, image files alongside it. Flat layout means `image: src: foo.png` resolves against the bundle root without rewriting paths on save. Tolerant unpacker: prefers `harness.yml`, falls back to first `.yml/.yaml`, flattens any nested image paths to basenames.
 - **`nuxt.config.ts`** — `runtimeConfig.sidecarUrl` (server-only, no `public.*` mirror — keeping the URL out of the browser bundle is intentional).
 - **`server/api/wireviz/`** — thin proxies. `parse.post.ts` forwards JSON; `parse-multipart.post.ts` and `render/png-multipart.post.ts` rebuild the multipart body as a real `FormData` before forwarding (Nitro parses the inbound parts but we have to reconstruct the boundary on the outbound). `extract.post.ts` rebuilds for PNG → YAML extraction. `health.get.ts` is a passthrough that converts sidecar timeout into `503`. All proxies convert sidecar errors into `createError({ data: { detail } })` so `err.data.detail` reaches the UI verbatim.
 
@@ -70,9 +70,9 @@ browser  ──FormData──>  /api/wireviz/parse-multipart   ──>  /parse-m
 - **`__main__.py`** — uvicorn entrypoint, exposed as the `wireviz-gui-sidecar` console script. Reads `WIREVIZ_GUI_HOST` / `WIREVIZ_GUI_PORT` env vars.
 - **`tests/test_smoke.py`** — uses FastAPI's `TestClient` against the real WireViz engine (no mocks) so engine-API drift is caught here first. Includes the multipart parse path with a Pillow-generated 4×4 PNG fixture.
 
-## Project bundle format (.wvz)
+## Project bundle format
 
-A `.wvz` is a flat zip archive containing the YAML and any image assets:
+The "Save .zip" button writes a plain `.zip` archive — no custom extension, no magic header. Layout is flat:
 
 ```
 harness.yml      ← required; the YAML at the root
@@ -80,9 +80,9 @@ foo.png          ← any image referenced by `image: src: foo.png`
 bar.jpg          ← etc — basename match against image_paths
 ```
 
-**Flat layout is intentional**: `image: src: foo.png` in the YAML resolves against the directory the sidecar spools the assets into (a per-request tempdir built from the zip's contents), so no path rewriting on save. The pack/unpack functions in `useWvzBundle` enforce this by flattening any nested entry to its basename on import.
+**Flat layout is intentional**: `image: src: foo.png` in the YAML resolves against the directory the sidecar spools the assets into (a per-request tempdir built from the zip's contents), so no path rewriting on save. The pack/unpack functions in [`useZipBundle`](frontend/app/composables/useZipBundle.ts) enforce this by flattening any nested entry to its basename on import.
 
-The PNG iTXt round-trip mechanism is a separate channel: rendered PNGs only carry the YAML, not the assets. To round-trip a project that references images, save as `.wvz`. To round-trip just the YAML (and have the rendered diagram stand on its own as a shareable file), the existing PNG iTXt path is fine.
+The PNG iTXt round-trip mechanism is a separate channel: rendered PNGs only carry the YAML, not the assets. To round-trip a project that references images, save as `.zip`. To share a single rendered diagram that stands on its own, the existing PNG iTXt path is fine.
 
 ## Load-bearing engine contracts
 

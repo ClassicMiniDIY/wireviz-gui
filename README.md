@@ -25,11 +25,11 @@ The sidecar is the only thing that loads the WireViz library. It exposes:
 
 All rendering goes through `Harness._render`, which is the only path in the engine that honors the `yaml_source` argument needed for PNG round-trip embedding. (The `harness.png` property used by `parse(return_types="png")` skips it.)
 
-## Project bundles (.wvz)
+## Project bundles
 
-A `.wvz` is a flat zip with `harness.yml` at the root plus any image files referenced by the YAML. Save with the **Save .wvz** button; open by dropping the file onto the editor or via the **Open…** picker. The frontend handles pack/unpack entirely client-side via JSZip.
+The **Save .zip** button writes a plain `.zip` with `harness.yml` at the root plus any image files referenced by the YAML. Open by dropping the file onto the editor or via the **Open…** picker. Pack/unpack happens entirely client-side via JSZip — there's nothing magic in the format, you can unzip it with any tool.
 
-PNG iTXt round-trip (rendered PNG carrying the YAML in its metadata) is the lighter-weight option for sharing a single rendered diagram. `.wvz` is the format when the project references images that need to come back too.
+PNG iTXt round-trip (rendered PNG carrying the YAML in its metadata) is the lighter-weight option for sharing a single rendered diagram. `.zip` is the format when the project references images that need to come back too.
 
 ## Prerequisites
 

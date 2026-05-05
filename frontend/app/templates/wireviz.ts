@@ -10,6 +10,16 @@ export type WirevizTemplate = {
   name: string
   description: string
   yaml: string
+  /**
+   * Image assets bundled with the template. When the template loads,
+   * each asset is fetched (from public/templates/...) and attached to
+   * the editor's asset map under the given filename — that filename
+   * matches the `image: src: <name>` reference in the YAML so the
+   * sidecar can resolve them on render.
+   *
+   * Leave undefined for templates that don't reference images.
+   */
+  assets?: { name: string; url: string }[]
 }
 
 export const wirevizTemplates: WirevizTemplate[] = [
@@ -190,7 +200,11 @@ connections:
   {
     id: 'bwtm-tps',
     name: 'TPS sensor (BWTM)',
-    description: '3-pin throttle position sensor → ECU. From the BadWolfTurboMap reference set.',
+    description:
+      '3-pin throttle position sensor → ECU. From the BadWolfTurboMap reference set; ships with a connector cross-section image so you can see asset resolution working.',
+    assets: [
+      { name: 'cross-section.png', url: '/templates/bwtm/tps-cross-section.png' },
+    ],
     yaml: `metadata:
   title: TPS (Throttle Position Sensor) Wiring
   description: 3-pin TPS connector to ECU wiring diagram
@@ -201,6 +215,10 @@ connectors:
     subtype: 3-pin male
     pinlabels: [5V - A, Signal GND - B, TPS Signal - C]
     notes: Throttle Position Sensor
+    image:
+      src: cross-section.png
+      caption: Cross-section
+      height: 200
 
   ECU:
     type: Connector
@@ -226,7 +244,11 @@ connections:
   {
     id: 'bwtm-trigger-sensor',
     name: 'Crank trigger sensor (BWTM)',
-    description: 'Hall-effect 3-pin crank sensor with switched-12V power and signal ground.',
+    description:
+      'Hall-effect 3-pin crank sensor with switched-12V power and signal ground. Ships with a connector cross-section image.',
+    assets: [
+      { name: 'cross-section.png', url: '/templates/bwtm/trigger-sensor-cross-section.png' },
+    ],
     yaml: `metadata:
   title: Trigger Sensor Wiring
   description: 3-pin trigger sensor connection diagram
@@ -238,6 +260,10 @@ connectors:
     pinlabels: [Signal Ground, 12V, 5V Signal]
     pins: [1, 2, 3]
     notes: Hall effect crank sensor
+    image:
+      src: cross-section.png
+      caption: Cross-section
+      height: 200
 
   ECU:
     type: ECU Connector
@@ -272,7 +298,11 @@ connections:
   {
     id: 'bwtm-dbw-pedal',
     name: 'DBW pedal (BWTM)',
-    description: '6-pin drive-by-wire pedal sensor → ECU (Nissan-style connector, dual sensor).',
+    description:
+      '6-pin drive-by-wire pedal sensor → ECU (Nissan-style connector, dual sensor). Ships with a pedal-connector cross-section image.',
+    assets: [
+      { name: 'cross-section.png', url: '/templates/bwtm/dbw-pedal-cross-section.png' },
+    ],
     yaml: `metadata:
   title: DBW Pedal Wiring
   description: 6-pin DBW pedal connection diagram
@@ -291,6 +321,10 @@ connectors:
         5v feed,
       ]
     pins: [A, B, C, D, E, F]
+    image:
+      src: cross-section.png
+      caption: Cross-section
+      height: 200
 
   ECU:
     type: ECU Pins
@@ -323,7 +357,11 @@ connections:
   {
     id: 'bwtm-dbw-throttle',
     name: 'DBW throttle body (BWTM)',
-    description: '6-pin drive-by-wire throttle: dual-rail motor drive plus dual TPS feedback.',
+    description:
+      '6-pin drive-by-wire throttle: dual-rail motor drive plus dual TPS feedback. Ships with a throttle-body cross-section image.',
+    assets: [
+      { name: 'cross-section.png', url: '/templates/bwtm/dbw-throttle-cross-section.png' },
+    ],
     yaml: `metadata:
   title: DBW Throttle Body Wiring
   description: 6-pin DBW throttle body connection diagram
@@ -335,6 +373,10 @@ connectors:
     pinlabels:
       [DBW Motor -, Signal Ground, 5V, DBW Motor +, TPS Input 1, TPS Input 2]
     pins: [1, 2, 3, 4, 5, 6]
+    image:
+      src: cross-section.png
+      caption: Cross-section
+      height: 200
 
   ECU:
     type: ECU Pins

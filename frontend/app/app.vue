@@ -67,13 +67,13 @@
             </div>
             <label
               class="btn btn-ghost btn-sm"
-              title="Open a .wvz project, .yml/.yaml, .png with embedded YAML, or drop image assets"
+              title="Open a project zip, .yml/.yaml, .png with embedded YAML, or drop image assets"
             >
               <i class="fas fa-folder-open" />
               <span>Open…</span>
               <input
                 type="file"
-                accept=".wvz,.yml,.yaml,.png,.jpg,.jpeg,.gif,.webp,.svg,application/zip,image/png"
+                accept=".zip,.yml,.yaml,.png,.jpg,.jpeg,.gif,.webp,.svg,application/zip,image/png"
                 multiple
                 @change="onPickFiles"
                 hidden
@@ -81,13 +81,13 @@
             </label>
             <button
               class="btn btn-ghost btn-sm"
-              :title="assets.count.value === 0 ? 'Save project (.wvz) — currently no assets attached, but the YAML still bundles' : `Save project (.wvz) with ${assets.count.value} asset${assets.count.value === 1 ? '' : 's'}`"
+              :title="assets.count.value === 0 ? 'Save project (.zip) — currently no assets attached, but the YAML still bundles' : `Save project (.zip) with ${assets.count.value} asset${assets.count.value === 1 ? '' : 's'}`"
               :disabled="savingProject"
               @click="saveProject"
             >
               <i v-if="!savingProject" class="fas fa-box-archive" />
               <i v-else class="fas fa-circle-notch fa-spin" />
-              <span>Save .wvz</span>
+              <span>Save .zip</span>
             </button>
             <button class="btn btn-primary btn-sm" :disabled="busy" @click="render">
               <i v-if="!busy" class="fas fa-play" />
@@ -138,7 +138,7 @@
         <div v-if="dragActive" class="drop-overlay">
           <i class="fas fa-arrow-down-to-bracket drop-icon" />
           <p>
-            Drop a <strong>.wvz</strong>, <strong>.yml</strong>, or
+            Drop a project <strong>.zip</strong>, <strong>.yml</strong>, or
             <strong>.png</strong> to open it — or any image to attach as an asset.
           </p>
         </div>
@@ -199,9 +199,10 @@ import { buildAssetForm } from '~/composables/useAssets'
 import {
   isProbablyImage,
   isProbablyYaml,
+  isProbablyZip,
   packBundle,
   unpackBundle,
-} from '~/composables/useWvzBundle'
+} from '~/composables/useZipBundle'
 
 const yamlSource = ref(`connectors:
   X1:
@@ -288,11 +289,38 @@ async function onEditorLoad() {
 
 const templatesOpen = ref(false)
 
-function loadTemplate(id: string) {
+async function loadTemplate(id: string) {
   const t = getTemplate(id)
   if (!t) return
-  yamlSource.value = t.yaml
   templatesOpen.value = false
+  yamlSource.value = t.yaml
+  // Reset the asset map: each template owns its asset set, so loading
+  // a new template should drop whatever was attached for the old one.
+  assets.clear()
+
+  if (t.assets?.length) {
+    // Fetch each bundled asset from /public and attach. We do this in
+    // parallel since each request is independent. If any fail we still
+    // render — the engine will surface the missing-asset error inline.
+    busy.value = true
+    error.value = null
+    try {
+      await Promise.all(
+        t.assets.map(async (a) => {
+          const res = await fetch(a.url)
+          if (!res.ok) {
+            throw new Error(`Failed to load template asset ${a.name}: ${res.status}`)
+          }
+          const blob = await res.blob()
+          assets.add({ name: a.name, type: blob.type, data: blob })
+        }),
+      )
+    } catch (err: any) {
+      error.value = err?.message ?? String(err)
+    } finally {
+      busy.value = false
+    }
+  }
   void render()
 }
 
@@ -402,7 +430,7 @@ async function ingestFiles(files: File[]) {
   try {
     for (const f of files) {
       try {
-        if (/\.wvz$/i.test(f.name) || f.type === 'application/zip') {
+        if (isProbablyZip(f.name, f.type)) {
           const { yaml, assets: bundleAssets } = await unpackBundle(f)
           yamlSource.value = yaml
           assets.replaceAll(bundleAssets)
@@ -451,7 +479,7 @@ async function saveProject() {
   error.value = null
   try {
     const blob = await packBundle(yamlSource.value, assets.list.value)
-    triggerDownload(blob, 'harness.wvz')
+    triggerDownload(blob, 'harness.zip')
   } catch (err: any) {
     error.value = err?.message ?? String(err)
   } finally {

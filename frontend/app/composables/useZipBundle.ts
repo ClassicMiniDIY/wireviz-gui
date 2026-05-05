@@ -1,17 +1,18 @@
-// Pack and unpack the .wvz project bundle.
+// Pack and unpack project bundles as plain .zip files.
 //
-// Bundle format: a flat zip containing:
-//   - harness.yml   (the YAML source at the bundle root)
-//   - <image>.png   (any image files referenced by `image: src: foo.png`)
-//   - <image>.jpg   (etc — any non-yaml binary at the root is treated as
-//                   an asset)
+// Bundle layout (flat):
+//   harness.yml      ← required; YAML source at the root
+//   <image>.png      ← any image files referenced by `image: src: foo.png`
+//   <image>.jpg      ← etc.
 //
-// Flat layout was chosen so that `image: src: foo.png` in the YAML
-// resolves against the bundle root without rewriting paths on save.
+// A flat layout means `image: src: foo.png` in the YAML resolves
+// against the bundle root with no path rewriting on save. The
+// importer is tolerant — it falls back to the first .yml/.yaml in
+// the archive if `harness.yml` isn't there, and flattens nested
+// image paths to their basenames so a hand-crafted zip with
+// folders still works.
 //
-// We use JSZip in-browser; no server round-trip is needed for pack/unpack.
-// Packing is sync (kicked off on click); unpacking is async because reading
-// each entry's blob is async.
+// We use JSZip entirely in-browser; no server round-trip is needed.
 
 import JSZip from 'jszip'
 
@@ -19,7 +20,7 @@ import type { AssetEntry } from '~/composables/useAssets'
 
 const HARNESS_FILENAME = 'harness.yml'
 
-export type WvzContents = {
+export type BundleContents = {
   yaml: string
   assets: { name: string; blob: Blob; type: string }[]
 }
@@ -30,6 +31,10 @@ export function isProbablyYaml(name: string) {
 
 export function isProbablyImage(name: string) {
   return /\.(png|jpe?g|gif|webp|svg)$/i.test(name)
+}
+
+export function isProbablyZip(name: string, mime?: string) {
+  return /\.zip$/i.test(name) || mime === 'application/zip'
 }
 
 function mimeForExt(name: string) {
@@ -59,12 +64,11 @@ export async function packBundle(yaml: string, assets: readonly AssetEntry[]): P
   })
 }
 
-export async function unpackBundle(file: Blob): Promise<WvzContents> {
+export async function unpackBundle(file: Blob): Promise<BundleContents> {
   const zip = await JSZip.loadAsync(file)
 
   // Find the YAML file. Prefer harness.yml at the root; otherwise the
-  // first .yml/.yaml in the bundle. This makes us tolerant of zips that
-  // someone hand-crafted without strictly following our naming.
+  // first .yml/.yaml in the bundle.
   let yamlName: string | undefined
   if (zip.files[HARNESS_FILENAME]) {
     yamlName = HARNESS_FILENAME
@@ -78,16 +82,13 @@ export async function unpackBundle(file: Blob): Promise<WvzContents> {
   }
   if (!yamlName) {
     throw new Error(
-      'No .yml file found in the bundle. A .wvz must contain harness.yml at its root.',
+      'No .yml file found in the bundle. A project zip must contain harness.yml at its root.',
     )
   }
 
   const yaml = await zip.files[yamlName]!.async('string')
 
-  // Everything else that looks like an image becomes an asset, keyed by
-  // its filename (without the directory prefix, in case someone zipped
-  // with nested paths — we flatten on import).
-  const assets: WvzContents['assets'] = []
+  const assets: BundleContents['assets'] = []
   for (const [name, entry] of Object.entries(zip.files)) {
     if (entry.dir || name === yamlName) continue
     if (!isProbablyImage(name)) continue
