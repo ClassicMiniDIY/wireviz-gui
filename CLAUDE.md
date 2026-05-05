@@ -1,77 +1,79 @@
 # CLAUDE.md
 
-Guidance for Claude Code when working in this repo. The companion engine repo at `/Users/colegentry/Development/WireViz` has its own `CLAUDE.md` with deeper engine context — read it before changing anything that crosses the API boundary.
+This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
 ## What this is
 
-A two-process app that turns WireViz YAML into harness diagrams interactively:
+A two-process desktop-style web app that turns [WireViz](https://github.com/ClassicMiniDIY/WireViz) YAML into rendered harness diagrams interactively:
 
-- **`frontend/`** — Nuxt 4 (compatibilityDate `2025-07-15`). Renders the editor + diagram preview. Has Nitro server routes under `server/api/wireviz/*` that proxy to the sidecar so the sidecar URL never reaches the browser bundle and CORS is a non-issue in production.
-- **`sidecar/`** — Python FastAPI service (`wireviz_gui_sidecar`) that imports WireViz 0.5.0 as a library and exposes `/parse`, `/render/{svg,png}`, `/extract`, `/health`. Listens on `127.0.0.1:8765` by default.
+- **`frontend/`** — Nuxt 4 (compatibilityDate `2025-07-15`). Single-page editor + diagram preview. Nitro server routes under `server/api/wireviz/*` proxy to the sidecar so the sidecar URL is server-only and CORS doesn't fire in production.
+- **`sidecar/`** — Python FastAPI service (`wireviz_gui_sidecar`) that imports WireViz 0.5.0 as a library. Listens on `127.0.0.1:8765` by default. This is the **only** place WireViz is loaded.
 
-The sidecar pins WireViz via a local `file://` install (`/Users/colegentry/Development/WireViz`). When the engine repo changes, the sidecar picks it up automatically because the install is editable.
-
-## Load-bearing engine details (do not regress)
-
-These three things from the engine repo's `CLAUDE.md` are **load-bearing** for this GUI. If you change the sidecar, you have to keep them working:
-
-1. **Always go through `wireviz.wireviz.parse()`.** Never shell out to the `wireviz` CLI. The CLI (`wv_cli.py`) is a thin Click wrapper; the GUI must drive the library directly so errors surface as structured exceptions, not stderr scraping.
-
-2. **Use `Harness._render` for everything that needs YAML embedding.** The engine has two PNG paths:
-   - `harness.png` (the property used by `parse(return_types="png")`) — does **NOT** embed YAML.
-   - `harness._render(("png",), yaml_source=...)` — embeds the YAML in a `wireviz:yaml` iTXt chunk.
-
-   The sidecar's `/parse` and `/render/png` go through `_render` so PNGs round-trip. The dict-shape contract is `{fmt: bytes|str}` — binary formats (`png`) are bytes, text formats (`svg`, `html`, `gv`, `tsv`) are str. Don't break that assumption.
-
-3. **PNG round-trip via the iTXt chunk.** Rendered PNGs carry their own source. `read_yaml_from_png` (imported from `wireviz.Harness`) extracts it. The "Open .png…" button in the UI relies on this. If a user uploads a PNG that wasn't rendered with `embed_yaml=True`, the sidecar returns 404 — that's intentional, not a bug.
+The engine repo lives next to this one at `../WireViz` (absolute: `/Users/colegentry/Development/WireViz`) and is installed editably — its `CLAUDE.md` documents the engine internals and is required reading before changing anything that crosses the API boundary.
 
 ## Commands
 
 ```bash
-# First-time setup (creates sidecar/.venv via uv, runs pnpm install)
-pnpm setup:sidecar
-pnpm setup:frontend
+# First-time setup
+pnpm setup:sidecar       # uv venv at sidecar/.venv (Python 3.12) + editable wireviz install
+pnpm setup:frontend      # pnpm install for Nuxt
 
-# Day-to-day: starts both processes side-by-side via concurrently
-pnpm dev
+# Day-to-day
+pnpm dev                 # both processes via concurrently: sidecar :8765, Nuxt :3000
+pnpm dev:sidecar         # uvicorn --reload only
+pnpm dev:frontend        # nuxt dev only
 
-# Just one or the other
-pnpm dev:sidecar     # sidecar with --reload on :8765
-pnpm dev:frontend    # nuxt dev on :3000
-
-# Sidecar tests (5 smoke tests including PNG round-trip)
+# Tests (5 smoke tests: health, parse pipeline, PNG round-trip, error path)
 pnpm test:sidecar
+sidecar/.venv/bin/pytest sidecar/tests/test_smoke.py::test_png_round_trip_via_extract  # one test
 
-# Production build of the frontend
-pnpm build
+# Production build
+pnpm build               # nuxt build (also typechecks the server routes)
 ```
 
-The sidecar venv lives at `sidecar/.venv` and is created with Python 3.12 via `uv`. WireViz itself is installed as `wireviz @ file:///Users/colegentry/Development/WireViz` — if you move the engine checkout, edit `sidecar/pyproject.toml` and re-run `pnpm setup:sidecar`.
+`graphviz` (the `dot` binary) must be on `PATH` — the sidecar shells out via the `graphviz` Python package. WireViz is pinned to a local path in `sidecar/pyproject.toml` (`wireviz @ file:///Users/colegentry/Development/WireViz`); change that line and re-run `pnpm setup:sidecar` to point at a different checkout.
 
-`graphviz` (the `dot` binary) must be on `PATH`. The sidecar shells out via the `graphviz` Python package, which calls `dot` directly.
+## Architecture
 
-## Architecture quick reference
+The data flow is one-way for rendering, two-way for round-trip:
 
 ```
-frontend/
-  app/app.vue                    Editor + preview UI (single page, no router yet)
-  nuxt.config.ts                 runtimeConfig.sidecarUrl — server-only
-  server/api/wireviz/
-    parse.post.ts                Proxies POST /parse JSON → sidecar
-    extract.post.ts              Proxies multipart PNG upload → sidecar /extract
-    health.get.ts                Health probe
-
-sidecar/
-  pyproject.toml                 Installs wireviz from local file:// path
-  wireviz_gui_sidecar/app.py     FastAPI surface; ALL rendering goes via _render
-  wireviz_gui_sidecar/__main__.py  uvicorn entrypoint
-  tests/test_smoke.py            5 tests: health, parse, PNG round-trip, error path
+browser  ──fetch──>  Nuxt server route ──$fetch──>  FastAPI sidecar ──>  wireviz.wireviz.parse()
+   ^                  /api/wireviz/*                  /parse, /extract        │
+   │                                                                          v
+   └────────  SVG string + base64 PNG + TSV + BOM rows  ─── Harness._render ──┘
 ```
+
+### Frontend (`frontend/`)
+
+- **`app/app.vue`** — the entire UI: textarea editor on the left, SVG preview on the right, `⌘⏎` / `Ctrl⏎` to render, "Open .png" file input that posts the PNG up for YAML extraction. Uses `useFetch` for the health probe and `$fetch` for parse/extract.
+- **`nuxt.config.ts`** — `runtimeConfig.sidecarUrl` (server-only, no `public.*` mirror — keeping the URL out of the browser bundle is intentional).
+- **`server/api/wireviz/{parse,extract,health}.*.ts`** — thin proxies to the sidecar. `parse.post.ts` forwards JSON; `extract.post.ts` rebuilds the multipart upload as a `FormData` before forwarding; `health.get.ts` is a passthrough that converts a sidecar timeout into a `503`. All three convert sidecar errors into `createError({ data: { detail } })` so `err.data.detail` reaches the UI verbatim.
+
+### Sidecar (`sidecar/wireviz_gui_sidecar/`)
+
+- **`app.py`** — FastAPI surface. The endpoints all funnel through one strategy: `wireviz.parse(return_types="harness")` to get the in-memory `Harness`, then `harness._render((fmt, ...), yaml_source=...)` to produce bytes/strings. `bom_rows = harness.bom()` is included separately so the UI doesn't have to parse TSV.
+- **`__main__.py`** — uvicorn entrypoint, exposed as the `wireviz-gui-sidecar` console script. Reads `WIREVIZ_GUI_HOST` / `WIREVIZ_GUI_PORT` env vars.
+- **`tests/test_smoke.py`** — uses FastAPI's `TestClient` against the real WireViz engine (no mocks) so engine-API drift is caught here first.
+
+## Load-bearing engine contracts
+
+These three behaviors come from the engine repo and **must** stay correct for the GUI to work. If the sidecar tests start failing after an engine bump, this is where to look.
+
+1. **`wireviz.parse()` is the only public entry — never shell out to the `wireviz` CLI.** The CLI (`wv_cli.py`) is a thin Click wrapper; the GUI must drive the library directly so errors are structured exceptions, not stderr scraping.
+
+2. **PNG embedding only happens via `Harness._render`.** The engine has two PNG paths:
+   - `harness.png` (the property used by `parse(return_types="png")`) does **NOT** embed YAML.
+   - `harness._render(("png",), yaml_source=...)` embeds the YAML in a `wireviz:yaml` iTXt chunk.
+
+   The sidecar always uses `_render` so PNGs round-trip. `_render` returns `{fmt: bytes|str}` — binary formats (`png`) are bytes, text formats (`svg`, `html`, `gv`, `tsv`) are str. Don't break that contract.
+
+3. **PNG → YAML round-trip via `read_yaml_from_png`.** Imported from `wireviz.Harness`. The "Open .png" button relies on this. If a user uploads a PNG that wasn't rendered with `embed_yaml=True`, the sidecar returns 404 — that's intentional, not a bug.
 
 ## Conventions
 
-- **Don't add a public.* mirror of `sidecarUrl`** in `nuxt.config.ts`. The URL is server-only on purpose. The UI talks to `/api/wireviz/*`, never the sidecar directly.
-- **Don't import from `wireviz` package root** — it's deliberately bare (`__init__.py` only exports `__version__` and a few constants). Import `parse` from `wireviz.wireviz` and `Harness`/`read_yaml_from_png` from `wireviz.Harness`.
-- **Don't write rendered files to disk in the sidecar.** Always use `output_formats=None` and `return_types="harness"`, then call `_render` for in-memory bytes/strings. The sidecar is stateless and shouldn't accumulate scratch files.
-- **Mirror engine API changes here.** When `wireviz.parse()` or `Harness._render` change signatures upstream, the sidecar's `/parse` is the first thing that breaks. The five smoke tests will catch most of it; run them after any engine bump.
-- **Keep error envelopes structured.** FastAPI's `HTTPException(detail=...)` flows through to the browser as `err.data.detail`. The frontend renders that verbatim in the error pane — don't wrap it in extra layers.
+- **Don't import from `wireviz` package root.** `__init__.py` is deliberately bare (only exports `__version__` and a few constants). Import `parse` from `wireviz.wireviz` and `Harness`/`read_yaml_from_png` from `wireviz.Harness`.
+- **Don't add `public.*` runtime config for the sidecar URL.** The browser must talk to `/api/wireviz/*`, never to the sidecar directly. Adding a public mirror leaks the address into the client bundle and breaks the production CORS story.
+- **Don't write rendered files to disk in the sidecar.** Always `output_formats=None`, `return_types="harness"`, then `_render` for in-memory output. The sidecar is stateless.
+- **Keep error envelopes thin.** FastAPI `HTTPException(detail=...)` propagates to `err.data.detail` in the browser; the UI renders that verbatim. Don't wrap it in extra layers.
+- **Run the smoke tests after any engine bump.** `pnpm test:sidecar` catches most signature/contract drift in `wireviz.parse()` and `Harness._render`.
