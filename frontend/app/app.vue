@@ -34,6 +34,30 @@
         <div class="card-header">
           <span class="text-meta"><i class="fas fa-code" /> YAML source</span>
           <div class="card-actions">
+            <div class="dropdown" :class="{ open: templatesOpen }">
+              <button
+                class="btn btn-ghost btn-sm"
+                aria-haspopup="menu"
+                :aria-expanded="templatesOpen"
+                @click="templatesOpen = !templatesOpen"
+              >
+                <i class="fas fa-file-lines" />
+                <span>Templates</span>
+                <i class="fas fa-chevron-down chev" />
+              </button>
+              <div v-if="templatesOpen" class="dropdown-menu" role="menu" @click.stop>
+                <button
+                  v-for="t in wirevizTemplates"
+                  :key="t.id"
+                  class="dropdown-item"
+                  role="menuitem"
+                  @click="loadTemplate(t.id)"
+                >
+                  <span class="item-title">{{ t.name }}</span>
+                  <span class="item-desc">{{ t.description }}</span>
+                </button>
+              </div>
+            </div>
             <label class="btn btn-ghost btn-sm" title="Import a previously rendered .png">
               <i class="fas fa-file-import" />
               <span>Open .png</span>
@@ -107,6 +131,8 @@
 </template>
 
 <script setup lang="ts">
+import { wirevizTemplates, getTemplate } from '~/templates/wireviz'
+
 const yamlSource = ref(`connectors:
   X1:
     type: D-Sub
@@ -146,6 +172,33 @@ const error = ref<string | null>(null)
 const result = ref<ParseResult | null>(null)
 
 const { theme, toggle: toggleTheme } = useTheme()
+
+const templatesOpen = ref(false)
+
+function loadTemplate(id: string) {
+  const t = getTemplate(id)
+  if (!t) return
+  yamlSource.value = t.yaml
+  templatesOpen.value = false
+  void render()
+}
+
+// Close the dropdown on outside click or Escape so it doesn't trap input.
+function handleDocClick(e: MouseEvent) {
+  const root = (e.target as Element)?.closest('.dropdown')
+  if (!root) templatesOpen.value = false
+}
+function handleDocKey(e: KeyboardEvent) {
+  if (e.key === 'Escape') templatesOpen.value = false
+}
+onMounted(() => {
+  document.addEventListener('click', handleDocClick)
+  document.addEventListener('keydown', handleDocKey)
+})
+onBeforeUnmount(() => {
+  document.removeEventListener('click', handleDocClick)
+  document.removeEventListener('keydown', handleDocKey)
+})
 
 const { data: health } = await useFetch<{ wireviz: string }>('/api/wireviz/health', {
   default: () => null,
@@ -401,6 +454,55 @@ onMounted(() => {
   background: var(--bg-1);
   color: var(--fg-2);
   margin-left: 4px;
+}
+
+/* ===== Dropdown ===== */
+.dropdown { position: relative; }
+.dropdown .chev {
+  font-size: 9px;
+  margin-left: 2px;
+  transition: transform var(--t-fast);
+}
+.dropdown.open .chev { transform: rotate(180deg); }
+
+.dropdown-menu {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  min-width: 280px;
+  background: var(--bg-1);
+  border: 1px solid var(--border-2);
+  border-radius: var(--radius-box);
+  box-shadow: var(--shadow-lg);
+  padding: var(--space-1);
+  z-index: 50;
+  display: flex;
+  flex-direction: column;
+}
+.dropdown-item {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  padding: var(--space-2) var(--space-3);
+  text-align: left;
+  background: transparent;
+  border: 0;
+  border-radius: var(--radius-field);
+  cursor: pointer;
+  font: inherit;
+  color: var(--fg-1);
+  transition: background var(--t-fast);
+}
+.dropdown-item:hover { background: var(--bg-2); }
+.item-title {
+  font-size: var(--fs-sm);
+  font-weight: var(--fw-semibold);
+}
+.item-desc {
+  font-size: var(--fs-xs);
+  color: var(--fg-3);
+  line-height: 1.35;
 }
 
 /* ===== Footer ===== */
