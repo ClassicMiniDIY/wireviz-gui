@@ -17,12 +17,19 @@ A Nuxt 4 frontend + Python FastAPI sidecar that wraps [WireViz 0.5.0](https://gi
 
 The sidecar is the only thing that loads the WireViz library. It exposes:
 
-- `POST /parse` — YAML in, JSON envelope of `{svg, png_base64, tsv, bom}` out
-- `POST /render/svg`, `POST /render/png` — direct binary endpoints
+- `POST /parse` — JSON; YAML in, `{svg, png_base64, tsv, bom}` out
+- `POST /parse-multipart` — multipart; YAML + N image uploads. Spools the uploads into a per-request tempdir, passes that as `image_paths` so `image: src: foo.png` references resolve.
+- `POST /render/{svg,png}` and `/render/{svg,png}-multipart` — direct binary endpoints
 - `POST /extract` — multipart PNG upload, returns the YAML embedded in its `wireviz:yaml` iTXt chunk
 - `GET  /health` — version probe
 
 All rendering goes through `Harness._render`, which is the only path in the engine that honors the `yaml_source` argument needed for PNG round-trip embedding. (The `harness.png` property used by `parse(return_types="png")` skips it.)
+
+## Project bundles (.wvz)
+
+A `.wvz` is a flat zip with `harness.yml` at the root plus any image files referenced by the YAML. Save with the **Save .wvz** button; open by dropping the file onto the editor or via the **Open…** picker. The frontend handles pack/unpack entirely client-side via JSZip.
+
+PNG iTXt round-trip (rendered PNG carrying the YAML in its metadata) is the lighter-weight option for sharing a single rendered diagram. `.wvz` is the format when the project references images that need to come back too.
 
 ## Prerequisites
 

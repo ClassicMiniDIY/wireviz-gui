@@ -10,6 +10,7 @@
     "postinstall": "nuxt prepare"
   },
   "dependencies": {
+    "jszip": "^3.10.1",
     "nuxt": "^4.4.4",
     "nuxt-monaco-editor": "^1.4.0",
     "vue": "^3.5.33",

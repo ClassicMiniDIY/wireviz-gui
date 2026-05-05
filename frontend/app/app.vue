@@ -30,9 +30,16 @@
     </header>
 
     <main class="workspace">
-      <section class="card editor-card">
+      <section
+        class="card editor-card"
+        :class="{ 'drop-target': dragActive }"
+        @dragenter.prevent="onDragEnter"
+        @dragover.prevent="onDragOver"
+        @dragleave.prevent="onDragLeave"
+        @drop.prevent="onDrop"
+      >
         <div class="card-header">
-          <span class="text-meta"><i class="fas fa-code" /> YAML source</span>
+          <span class="text-meta"><i class="fas fa-code" /> Editor</span>
           <div class="card-actions">
             <div class="dropdown" :class="{ open: templatesOpen }">
               <button
@@ -58,11 +65,30 @@
                 </button>
               </div>
             </div>
-            <label class="btn btn-ghost btn-sm" title="Import a previously rendered .png">
-              <i class="fas fa-file-import" />
-              <span>Open .png</span>
-              <input type="file" accept="image/png" @change="openPng" hidden />
+            <label
+              class="btn btn-ghost btn-sm"
+              title="Open a .wvz project, .yml/.yaml, .png with embedded YAML, or drop image assets"
+            >
+              <i class="fas fa-folder-open" />
+              <span>Open…</span>
+              <input
+                type="file"
+                accept=".wvz,.yml,.yaml,.png,.jpg,.jpeg,.gif,.webp,.svg,application/zip,image/png"
+                multiple
+                @change="onPickFiles"
+                hidden
+              />
             </label>
+            <button
+              class="btn btn-ghost btn-sm"
+              :title="assets.count.value === 0 ? 'Save project (.wvz) — currently no assets attached, but the YAML still bundles' : `Save project (.wvz) with ${assets.count.value} asset${assets.count.value === 1 ? '' : 's'}`"
+              :disabled="savingProject"
+              @click="saveProject"
+            >
+              <i v-if="!savingProject" class="fas fa-box-archive" />
+              <i v-else class="fas fa-circle-notch fa-spin" />
+              <span>Save .wvz</span>
+            </button>
             <button class="btn btn-primary btn-sm" :disabled="busy" @click="render">
               <i v-if="!busy" class="fas fa-play" />
               <i v-else class="fas fa-circle-notch fa-spin" />
@@ -71,6 +97,27 @@
             </button>
           </div>
         </div>
+
+        <div v-if="assets.count.value > 0" class="asset-row">
+          <span class="text-meta"><i class="fas fa-paperclip" /> Assets ({{ assets.count.value }})</span>
+          <div class="asset-chips">
+            <div v-for="a in assets.list.value" :key="a.name" class="asset-chip">
+              <img v-if="a.type.startsWith('image/')" :src="a.objectUrl" :alt="a.name" class="asset-thumb" />
+              <i v-else class="fas fa-file asset-thumb-fallback" />
+              <span class="asset-name" :title="a.name">{{ a.name }}</span>
+              <span class="asset-size">{{ formatBytes(a.size) }}</span>
+              <button
+                class="asset-remove"
+                :title="`Remove ${a.name}`"
+                :aria-label="`Remove ${a.name}`"
+                @click="removeAsset(a.name)"
+              >
+                <i class="fas fa-xmark" />
+              </button>
+            </div>
+          </div>
+        </div>
+
         <ClientOnly>
           <MonacoEditor
             v-model="yamlSource"
@@ -85,7 +132,16 @@
             <pre class="yaml-editor-fallback">{{ yamlSource }}</pre>
           </template>
         </ClientOnly>
+
         <div v-if="error" class="alert-error">{{ error }}</div>
+
+        <div v-if="dragActive" class="drop-overlay">
+          <i class="fas fa-arrow-down-to-bracket drop-icon" />
+          <p>
+            Drop a <strong>.wvz</strong>, <strong>.yml</strong>, or
+            <strong>.png</strong> to open it — or any image to attach as an asset.
+          </p>
+        </div>
       </section>
 
       <section class="card preview-card">
@@ -139,6 +195,13 @@
 
 <script setup lang="ts">
 import { wirevizTemplates, getTemplate } from '~/templates/wireviz'
+import { buildAssetForm } from '~/composables/useAssets'
+import {
+  isProbablyImage,
+  isProbablyYaml,
+  packBundle,
+  unpackBundle,
+} from '~/composables/useWvzBundle'
 
 const yamlSource = ref(`connectors:
   X1:
@@ -175,13 +238,13 @@ type ParseResult = {
 
 const busy = ref(false)
 const downloadingPng = ref(false)
+const savingProject = ref(false)
 const error = ref<string | null>(null)
 const result = ref<ParseResult | null>(null)
 
 const { theme, toggle: toggleTheme } = useTheme()
+const assets = useAssets()
 
-// Monaco bridge: cmdiy/cmdiy-dark map to the closest built-in Monaco themes
-// for now (vs / vs-dark). Phase 3 can register a true CMDIY theme if needed.
 const monacoTheme = computed(() => (theme.value === 'cmdiy-dark' ? 'vs-dark' : 'vs'))
 
 const monacoOptions = {
@@ -196,24 +259,13 @@ const monacoOptions = {
   wordWrap: 'on' as const,
   renderLineHighlight: 'all' as const,
   padding: { top: 12, bottom: 12 },
-  // Auto-pop the suggest widget while typing. Default is `{other: 'on',
-  // comments: 'off', strings: 'off'}` — but Monaco's YAML tokenizer
-  // classifies the right-hand side of `key: value` as a string, so
-  // without `strings: 'on'` autocomplete only fires on Ctrl+Space.
   quickSuggestions: { other: 'on', comments: 'off', strings: 'on' } as const,
   suggestOnTriggerCharacters: true,
-  // 'smart' = Enter accepts the highlighted suggestion only when it would
-  // make a textual change (i.e. you arrowed into something different from
-  // what's already typed). Plain Enter still falls through to newline when
-  // the suggestion matches the typed prefix exactly. Tab always accepts.
   acceptSuggestionOnEnter: 'smart' as const,
   tabCompletion: 'on' as const,
 }
 
 function onEditorKeydown(e: KeyboardEvent) {
-  // Monaco swallows the textarea-style listeners on the host element, so we
-  // intercept Cmd/Ctrl+Enter at this layer and forward to render(). Other
-  // keystrokes pass through to Monaco unchanged.
   if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
     e.preventDefault()
     e.stopPropagation()
@@ -225,10 +277,6 @@ let completionDispose: (() => void) | null = null
 let hoverDispose: (() => void) | null = null
 
 async function onEditorLoad() {
-  // Register the WireViz schema-driven completion + hover providers
-  // against the singleton Monaco runtime. We do this on @load (once)
-  // rather than in a Nuxt plugin because the providers must run
-  // against the exact monaco instance the editor uses.
   if (completionDispose || hoverDispose) return
   const { registerWirevizCompletion, registerWirevizHover } = await import(
     '~/composables/useWirevizCompletion'
@@ -237,11 +285,6 @@ async function onEditorLoad() {
   completionDispose = registerWirevizCompletion(monaco).dispose
   hoverDispose = registerWirevizHover(monaco).dispose
 }
-
-onBeforeUnmount(() => {
-  completionDispose?.()
-  hoverDispose?.()
-})
 
 const templatesOpen = ref(false)
 
@@ -253,7 +296,6 @@ function loadTemplate(id: string) {
   void render()
 }
 
-// Close the dropdown on outside click or Escape so it doesn't trap input.
 function handleDocClick(e: MouseEvent) {
   const root = (e.target as Element)?.closest('.dropdown')
   if (!root) templatesOpen.value = false
@@ -268,21 +310,37 @@ onMounted(() => {
 onBeforeUnmount(() => {
   document.removeEventListener('click', handleDocClick)
   document.removeEventListener('keydown', handleDocKey)
+  completionDispose?.()
+  hoverDispose?.()
 })
 
 const { data: health } = await useFetch<{ wireviz: string }>('/api/wireviz/health', {
   default: () => null,
 })
 
+// ---- Render: multipart when assets present, JSON otherwise -------------
+
 async function render() {
   busy.value = true
   error.value = null
   try {
-    // Live preview only needs SVG. PNG round-trips via /render/png on download.
-    result.value = await $fetch<ParseResult>('/api/wireviz/parse', {
-      method: 'POST',
-      body: { yaml: yamlSource.value, formats: ['svg'] },
-    })
+    if (assets.count.value > 0) {
+      // Multipart path: send YAML + every attached asset so the engine
+      // can resolve `image: src: foo.png` references.
+      const form = buildAssetForm(
+        { yaml: yamlSource.value, formats: ['svg'], embed_yaml: 'true' },
+        assets.list.value,
+      )
+      result.value = await $fetch<ParseResult>('/api/wireviz/parse-multipart', {
+        method: 'POST',
+        body: form,
+      })
+    } else {
+      result.value = await $fetch<ParseResult>('/api/wireviz/parse', {
+        method: 'POST',
+        body: { yaml: yamlSource.value, formats: ['svg'] },
+      })
+    }
   } catch (err: any) {
     error.value = err?.data?.detail ?? err?.statusMessage ?? String(err)
     result.value = null
@@ -291,26 +349,117 @@ async function render() {
   }
 }
 
-async function openPng(e: Event) {
-  const file = (e.target as HTMLInputElement).files?.[0]
-  if (!file) return
+// ---- File pickers / drag-drop ------------------------------------------
+
+async function onPickFiles(e: Event) {
+  const input = e.target as HTMLInputElement
+  const files = Array.from(input.files ?? [])
+  input.value = ''
+  await ingestFiles(files)
+}
+
+async function onDrop(e: DragEvent) {
+  dragActive.value = false
+  const files = Array.from(e.dataTransfer?.files ?? [])
+  await ingestFiles(files)
+}
+
+const dragActive = ref(false)
+let dragDepth = 0
+
+function onDragEnter(_e: DragEvent) {
+  dragDepth += 1
+  dragActive.value = true
+}
+function onDragOver(e: DragEvent) {
+  // Tell the browser we accept the drop so the cursor changes.
+  if (e.dataTransfer) e.dataTransfer.dropEffect = 'copy'
+}
+function onDragLeave(_e: DragEvent) {
+  dragDepth -= 1
+  if (dragDepth <= 0) {
+    dragDepth = 0
+    dragActive.value = false
+  }
+}
+
+/**
+ * Smart router for incoming files. Each file is dispatched by extension:
+ *   .wvz  -> unpack into editor + asset map (replaces both)
+ *   .yml/.yaml -> load as the editor buffer
+ *   .png with iTXt -> extract YAML and load
+ *   image/* (other) -> attach as an asset
+ *
+ * Errors per-file are surfaced into the alert pane but don't abort the
+ * batch — the user dropping a folder of mixed files still gets the
+ * useful ones picked up.
+ */
+async function ingestFiles(files: File[]) {
+  if (!files.length) return
   busy.value = true
   error.value = null
+  const errors: string[] = []
   try {
-    const form = new FormData()
-    form.append('file', file)
-    const { yaml } = await $fetch<{ yaml: string }>('/api/wireviz/extract', {
-      method: 'POST',
-      body: form,
-    })
-    yamlSource.value = yaml
+    for (const f of files) {
+      try {
+        if (/\.wvz$/i.test(f.name) || f.type === 'application/zip') {
+          const { yaml, assets: bundleAssets } = await unpackBundle(f)
+          yamlSource.value = yaml
+          assets.replaceAll(bundleAssets)
+        } else if (isProbablyYaml(f.name)) {
+          yamlSource.value = await f.text()
+        } else if (/\.png$/i.test(f.name)) {
+          // Try iTXt extraction first; if that fails (no embedded YAML)
+          // fall through to "attach as asset" so users can drop reference
+          // images that happen to be PNG.
+          try {
+            const form = new FormData()
+            form.append('file', f)
+            const { yaml } = await $fetch<{ yaml: string }>('/api/wireviz/extract', {
+              method: 'POST',
+              body: form,
+            })
+            yamlSource.value = yaml
+          } catch {
+            assets.add(f)
+          }
+        } else if (isProbablyImage(f.name) || f.type.startsWith('image/')) {
+          assets.add(f)
+        } else {
+          errors.push(`${f.name}: unsupported file type`)
+        }
+      } catch (err: any) {
+        errors.push(`${f.name}: ${err?.data?.detail ?? err?.message ?? String(err)}`)
+      }
+    }
+    if (errors.length) error.value = errors.join('\n')
     await render()
-  } catch (err: any) {
-    error.value = err?.data?.detail ?? err?.statusMessage ?? String(err)
   } finally {
     busy.value = false
   }
 }
+
+function removeAsset(name: string) {
+  assets.remove(name)
+  void render()
+}
+
+// ---- Save .wvz ---------------------------------------------------------
+
+async function saveProject() {
+  savingProject.value = true
+  error.value = null
+  try {
+    const blob = await packBundle(yamlSource.value, assets.list.value)
+    triggerDownload(blob, 'harness.wvz')
+  } catch (err: any) {
+    error.value = err?.message ?? String(err)
+  } finally {
+    savingProject.value = false
+  }
+}
+
+// ---- Diagram downloads -------------------------------------------------
 
 function triggerDownload(blob: Blob, filename: string) {
   const url = URL.createObjectURL(blob)
@@ -331,17 +480,38 @@ async function downloadPng() {
   downloadingPng.value = true
   error.value = null
   try {
-    const buf = await $fetch<ArrayBuffer>('/api/wireviz/render/png', {
-      method: 'POST',
-      body: { yaml: yamlSource.value, embed_yaml: true },
-      responseType: 'arrayBuffer',
-    })
+    let buf: ArrayBuffer
+    if (assets.count.value > 0) {
+      const form = buildAssetForm(
+        { yaml: yamlSource.value, embed_yaml: 'true' },
+        assets.list.value,
+      )
+      buf = await $fetch<ArrayBuffer>('/api/wireviz/render/png-multipart', {
+        method: 'POST',
+        body: form,
+        responseType: 'arrayBuffer',
+      })
+    } else {
+      buf = await $fetch<ArrayBuffer>('/api/wireviz/render/png', {
+        method: 'POST',
+        body: { yaml: yamlSource.value, embed_yaml: true },
+        responseType: 'arrayBuffer',
+      })
+    }
     triggerDownload(new Blob([buf], { type: 'image/png' }), 'harness.png')
   } catch (err: any) {
     error.value = err?.data?.detail ?? err?.statusMessage ?? String(err)
   } finally {
     downloadingPng.value = false
   }
+}
+
+// ---- Helpers -----------------------------------------------------------
+
+function formatBytes(n: number) {
+  if (n < 1024) return `${n} B`
+  if (n < 1024 * 1024) return `${(n / 1024).toFixed(1)} KB`
+  return `${(n / 1024 / 1024).toFixed(1)} MB`
 }
 
 onMounted(() => {
@@ -376,10 +546,6 @@ onMounted(() => {
   height: 38px;
   display: block;
   border-radius: 8px;
-  /* ios-icon.png is the wheel mark on layered olive bands (the same
-     square badge used as the iOS app icon). It's self-contained with
-     its own background, so it reads cleanly against either header
-     surface — no per-theme asset swap needed. */
 }
 .brand-text {
   display: flex;
@@ -444,6 +610,9 @@ onMounted(() => {
 .preview-card {
   min-height: 0;
 }
+.editor-card {
+  position: relative; /* drop overlay anchor */
+}
 
 .card-header {
   display: flex;
@@ -452,14 +621,14 @@ onMounted(() => {
   padding: var(--space-3) var(--space-4);
   border-bottom: 1px solid var(--border-1);
   background: var(--bg-2);
+  flex-wrap: wrap;
+  gap: var(--space-2);
 }
 
 .yaml-editor {
   flex: 1;
   width: 100%;
   min-height: 0;
-  /* Monaco renders its own viewport / scrollbars / focus ring. We just
-     own the outer box. */
 }
 .yaml-editor-fallback {
   flex: 1;
@@ -477,6 +646,94 @@ onMounted(() => {
 
 .alert-error {
   margin: 0 var(--space-4) var(--space-4);
+}
+
+/* ===== Asset chips ===== */
+.asset-row {
+  padding: var(--space-2) var(--space-4);
+  border-bottom: 1px solid var(--border-1);
+  background: var(--bg-1);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+.asset-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+.asset-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: 4px 8px 4px 4px;
+  background: var(--bg-2);
+  border: 1px solid var(--border-1);
+  border-radius: var(--radius-pill);
+  font-size: var(--fs-xs);
+  max-width: 240px;
+}
+.asset-thumb {
+  width: 24px;
+  height: 24px;
+  object-fit: cover;
+  border-radius: 4px;
+  background: var(--bg-3);
+  flex-shrink: 0;
+}
+.asset-thumb-fallback {
+  width: 24px;
+  height: 24px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--fg-3);
+}
+.asset-name {
+  font-family: var(--font-mono);
+  color: var(--fg-1);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.asset-size { color: var(--fg-3); }
+.asset-remove {
+  border: 0;
+  background: transparent;
+  color: var(--fg-3);
+  cursor: pointer;
+  padding: 2px 4px;
+  border-radius: 4px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+.asset-remove:hover { background: var(--bg-3); color: var(--fg-1); }
+
+/* ===== Drop overlay ===== */
+.editor-card.drop-target { outline: 2px dashed var(--cm-primary); outline-offset: -2px; }
+.drop-overlay {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-3);
+  background: color-mix(in srgb, var(--cm-primary) 12%, var(--bg-1));
+  pointer-events: none;
+  z-index: 10;
+  text-align: center;
+  padding: var(--space-6);
+}
+.drop-overlay p {
+  max-width: 380px;
+  color: var(--fg-1);
+  font-size: var(--fs-sm);
+}
+.drop-icon {
+  font-size: 36px;
+  color: var(--cm-primary);
 }
 
 /* ===== Preview ===== */
