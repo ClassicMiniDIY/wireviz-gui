@@ -67,7 +67,7 @@ function unwrap(s: JSONSchema | undefined): JSONSchema {
  * Resolution descends `properties` for keys, `additionalProperties`
  * for designator maps (connectors → X1), and `items` for arrays.
  */
-function locateScope(
+export function locateScope(
   lines: string[],
   lineIndex: number,
   cursorColumn: number = 1,
@@ -165,7 +165,7 @@ function locateScope(
   return unwrap(node)
 }
 
-function buildKeyCompletions(
+export function buildKeyCompletions(
   monaco: typeof Monaco,
   scope: JSONSchema,
   range: Monaco.IRange,
@@ -200,7 +200,7 @@ function buildKeyCompletions(
   })
 }
 
-function buildValueCompletions(
+export function buildValueCompletions(
   monaco: typeof Monaco,
   fieldSchema: JSONSchema,
   range: Monaco.IRange,
@@ -243,7 +243,7 @@ function buildValueCompletions(
  * field's `items` schema so the completions come from the element type
  * (e.g. colorCode) rather than the array container itself.
  */
-function valuePositionField(
+export function valuePositionField(
   beforeCursor: string,
   scope: JSONSchema,
 ): JSONSchema | null {

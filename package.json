@@ -8,7 +8,9 @@
     "dev:sidecar": "cd sidecar && .venv/bin/wireviz-gui-sidecar --reload",
     "dev:frontend": "cd frontend && pnpm dev",
     "build": "cd frontend && pnpm build",
+    "test": "pnpm test:sidecar && pnpm test:frontend",
     "test:sidecar": "cd sidecar && .venv/bin/pytest",
+    "test:frontend": "cd frontend && pnpm test",
     "setup:sidecar": "cd sidecar && uv venv --python 3.12 .venv && .venv/bin/uv pip install -e \".[dev]\"",
     "setup:frontend": "cd frontend && pnpm install"
   },

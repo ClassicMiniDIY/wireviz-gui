@@ -23,9 +23,12 @@ pnpm dev                 # both processes via concurrently: sidecar :8765, Nuxt 
 pnpm dev:sidecar         # uvicorn --reload only
 pnpm dev:frontend        # nuxt dev only
 
-# Tests (5 smoke tests: health, parse pipeline, PNG round-trip, error path)
-pnpm test:sidecar
+# Tests (sidecar + frontend, 67 total)
+pnpm test                # both runners
+pnpm test:sidecar        # 16 pytest tests (FastAPI TestClient against the real engine)
+pnpm test:frontend       # 51 vitest specs (composables + templates + completion)
 sidecar/.venv/bin/pytest sidecar/tests/test_smoke.py::test_png_round_trip_via_extract  # one test
+cd frontend && pnpm test:watch  # vitest in watch mode
 
 # Production build
 pnpm build               # nuxt build (also typechecks the server routes)
@@ -56,6 +59,16 @@ browser  ──FormData──>  /api/wireviz/parse-multipart   ──>  /parse-m
                                                              └─ tempdir auto-deleted on response
 ```
 
+### Frontend tests (`frontend/tests/`)
+
+Vitest with two environments:
+- **`tests/unit/*`** runs in `happy-dom` — pure module tests that need browser-shaped DOM globals (Blob, File, URL.createObjectURL, FormData) but no Nuxt context. Covers `useZipBundle` (pack / unpack / round-trip / predicates), `useWirevizCompletion` (locateScope across every YAML shape, valuePositionField with prefixes and array literals, key/value completion builders), and `templates` (every template parses as YAML, ids unique, asset URLs match files we ship, every YAML `image: src:` is in the template's bundled assets).
+- **`tests/nuxt/*`** runs in the Nuxt test environment (provides `useState`). Covers `useAssets` (add / replace / remove / clear / replaceAll / sorting / total bytes) and `buildAssetForm`. The Nuxt env's `URL.createObjectURL` is stubbed in `beforeAll` because node:buffer's strict validator doesn't accept happy-dom-shaped Blobs across realms.
+
+`vitest.config.ts` uses `pool: 'forks'` — without it the Nuxt test env leaks a Vite server after the suite finishes and breaks the exit code.
+
+App.vue itself isn't unit-tested; it's mostly orchestration around the composables (which are tested) and is verified end-to-end via manual smoke + the in-browser scripted tests we ran during development.
+
 ### Frontend (`frontend/`)
 
 - **`app/app.vue`** — the entire UI: Monaco editor on the left, SVG preview on the right, asset chip row above the editor, drag-drop overlay over the editor card. `⌘⏎` to render. Routes incoming files by extension via `ingestFiles`: `.zip` unpacks into editor + asset map, `.yml/.yaml` loads as the editor buffer, `.png` tries iTXt extraction first then falls back to "attach as asset" if no embedded YAML, any other image attaches directly. The render call branches on `assets.count`: empty → JSON `/parse`, populated → multipart `/parse-multipart`. Same branch on PNG download.
@@ -68,7 +81,7 @@ browser  ──FormData──>  /api/wireviz/parse-multipart   ──>  /parse-m
 
 - **`app.py`** — FastAPI surface. The endpoints all funnel through `_do_parse` / `_do_render_one`: `wireviz.parse(return_types="harness", image_paths=[...])` to get the in-memory `Harness`, then `harness._render((fmt, ...), yaml_source=...)` to produce bytes/strings. `bom_rows = harness.bom()` is included separately so the UI doesn't have to parse TSV. The multipart endpoints (`parse-multipart`, `render/svg-multipart`, `render/png-multipart`) spool uploaded files into a per-request `tempfile.TemporaryDirectory` and pass that to WireViz as `image_paths` — no asset state persists between requests.
 - **`__main__.py`** — uvicorn entrypoint, exposed as the `wireviz-gui-sidecar` console script. Reads `WIREVIZ_GUI_HOST` / `WIREVIZ_GUI_PORT` env vars.
-- **`tests/test_smoke.py`** — uses FastAPI's `TestClient` against the real WireViz engine (no mocks) so engine-API drift is caught here first. Includes the multipart parse path with a Pillow-generated 4×4 PNG fixture.
+- **`tests/test_smoke.py`** — uses FastAPI's `TestClient` against the real WireViz engine (no mocks) so engine-API drift is caught here first. 16 tests covering: health, JSON parse / render, PNG iTXt round-trip, multipart parse + render with image uploads, multiple-file uploads, path-traversal sanitization (uploads with `../` in filename get basename-stripped), missing-asset 422, BOM row shape, all output formats (svg/png/tsv/html/gv).
 
 ## Project bundle format
 

@@ -25,8 +25,16 @@ export function useAssets() {
 
   function add(file: File | { name: string; type?: string; data: Blob }): AssetEntry {
     const name = (file as File).name ?? (file as any).name
-    const blob = file instanceof File ? file : (file as any).data
-    const type = (file as any).type ?? blob.type ?? 'application/octet-stream'
+    const sourceBlob = file instanceof File ? file : (file as any).data
+    const type = (file as any).type ?? sourceBlob.type ?? 'application/octet-stream'
+    // Normalise to a plain Blob. Browsers accept File for both
+    // URL.createObjectURL and FormData filename, but some Node-shaped
+    // test environments only accept Blob — wrapping here keeps both
+    // happy without a behaviour change in production.
+    const blob =
+      sourceBlob instanceof Blob && !(sourceBlob instanceof File)
+        ? sourceBlob
+        : new Blob([sourceBlob], { type })
     const existing = map.value.get(name)
     if (existing) URL.revokeObjectURL(existing.objectUrl)
     const entry: AssetEntry = {
@@ -102,7 +110,10 @@ export function buildAssetForm(
     }
   }
   for (const a of assets) {
-    fd.append('files', a.blob, a.name)
+    // Wrapping in File ensures the multipart `filename` attribute is
+    // set in every environment. happy-dom and some Node FormData
+    // implementations drop the third arg of fd.append(name, blob, fn).
+    fd.append('files', new File([a.blob], a.name, { type: a.type }))
   }
   return fd
 }

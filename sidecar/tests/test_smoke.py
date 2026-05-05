@@ -173,3 +173,134 @@ def test_render_png_multipart_preserves_iTXt(client):
     )
     assert extract.status_code == 200
     assert "X1" in extract.json()["yaml"]
+
+
+def test_render_svg_multipart_resolves_uploaded_asset(client):
+    r = client.post(
+        "/render/svg-multipart",
+        data={"yaml": YAML_WITH_IMAGE},
+        files=[("files", ("cross-section.png", TINY_PNG, "image/png"))],
+    )
+    assert r.status_code == 200
+    assert r.headers["content-type"].startswith("image/svg+xml")
+    body = r.content.decode("utf-8")
+    assert body.lstrip().startswith("<")
+    # Same data-URI inlining we verified in the parse path.
+    assert "data:image/png;base64," in body
+
+
+YAML_TWO_IMAGES = """\
+connectors:
+  X1:
+    pincount: 2
+    image:
+      src: a.png
+      width: 64
+  X2:
+    pincount: 2
+    image:
+      src: b.png
+      width: 64
+
+cables:
+  W1:
+    wirecount: 2
+    length: 0.1
+
+connections:
+  -
+    - X1: [1-2]
+    - W1: [1-2]
+    - X2: [1-2]
+"""
+
+
+def test_parse_multipart_handles_multiple_uploads(client):
+    r = client.post(
+        "/parse-multipart",
+        data={"yaml": YAML_TWO_IMAGES, "formats": "svg"},
+        files=[
+            ("files", ("a.png", TINY_PNG, "image/png")),
+            ("files", ("b.png", TINY_PNG, "image/png")),
+        ],
+    )
+    assert r.status_code == 200, r.text
+    body = r.json()
+    # Both images should be inlined as data URIs in the SVG.
+    assert body["svg"].count("data:image/png;base64,") >= 2
+
+
+def test_parse_multipart_sanitises_filename_against_traversal(client):
+    # The sidecar's spool function strips any directory components from
+    # the upload filename — it uses Path(filename).name as the on-disk
+    # target. A YAML reference to ../etc/passwd would therefore not
+    # resolve, but the upload itself doesn't escape the tempdir.
+    yaml = """\
+connectors:
+  X1:
+    pincount: 1
+    image:
+      src: passwd.png
+cables:
+  W1:
+    wirecount: 1
+    length: 0.1
+connections:
+  -
+    - X1: 1
+    - W1: 1
+"""
+    # Submit an upload whose filename would traverse if used naively.
+    r = client.post(
+        "/parse-multipart",
+        data={"yaml": yaml, "formats": "svg"},
+        files=[("files", ("../../etc/passwd.png", TINY_PNG, "image/png"))],
+    )
+    # Should resolve as the basename `passwd.png` and succeed — proving the
+    # filename was sanitised, not honored as a path.
+    assert r.status_code == 200, r.text
+    assert "data:image/png;base64," in r.json()["svg"]
+
+
+def test_parse_multipart_rejects_empty_filename(client):
+    # Sending an upload with an empty filename must not be accepted —
+    # the sidecar can't write that to the tempdir under any sensible
+    # name. FastAPI's validator will often catch this as a 422 before
+    # reaching our handler; we also raise 400 from the handler. Either
+    # client-side error code is fine; what matters is "not 200".
+    r = client.post(
+        "/parse-multipart",
+        data={"yaml": SIMPLE_YAML, "formats": "svg"},
+        files=[("files", ("", TINY_PNG, "image/png"))],
+    )
+    assert r.status_code in (400, 422)
+
+
+def test_parse_returns_structured_bom(client):
+    r = client.post("/parse", json={"yaml": SIMPLE_YAML, "formats": ["tsv"]})
+    assert r.status_code == 200
+    body = r.json()
+    bom = body["bom"]
+    assert isinstance(bom, list) and len(bom) > 0
+    # Each row is a dict-like record. Don't pin specific keys (engine
+    # may evolve) but at minimum row 0 must have something.
+    assert isinstance(bom[0], dict) and len(bom[0]) > 0
+
+
+def test_parse_supports_html_and_gv_formats(client):
+    r = client.post(
+        "/parse", json={"yaml": SIMPLE_YAML, "formats": ["html", "gv"]}
+    )
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert body["html"] and "<html" in body["html"].lower()
+    # WireViz emits an undirected graph (`graph { ... }`), not `digraph`.
+    assert body["gv"] and body["gv"].lstrip().startswith("graph ")
+
+
+def test_parse_rejects_unknown_format(client):
+    r = client.post(
+        "/parse", json={"yaml": SIMPLE_YAML, "formats": ["pdf", "svg"]}
+    )
+    assert r.status_code == 400
+    assert "pdf" in r.json()["detail"].lower()
