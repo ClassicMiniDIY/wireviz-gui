@@ -1,0 +1,302 @@
+/* ============================================================
+   Classic Mini DIY — Design Tokens (stripped for wireviz-gui)
+   Source: classic-mini-diy-design-system/project/colors_and_type.css
+   Brand : Olive Green #859369 + Burnt Orange #ED7135
+   ============================================================ */
+
+:root,
+[data-theme='cmdiy'] {
+  /* Brand */
+  --cm-primary:           #859369;
+  --cm-primary-content:   #fafafa;
+  --cm-secondary:         #ED7135;
+  --cm-secondary-content: #fafafa;
+  --cm-accent:            #6B7A52;
+  --cm-accent-content:    #fafafa;
+
+  /* Surfaces */
+  --cm-base-100:          #ffffff;
+  --cm-base-200:          #f3f3f3;
+  --cm-base-300:          #e6e6e6;
+  --cm-base-content:      #1c1c20;
+
+  --cm-neutral:           #0e0e10;
+  --cm-neutral-content:   #e7e7e9;
+
+  /* Semantic */
+  --cm-info:              #3B82F6;
+  --cm-info-content:      #fafafa;
+  --cm-success:           #4A7023;
+  --cm-success-content:   #fafafa;
+  --cm-warning:           #F59E0B;
+  --cm-warning-content:   #2f2f2f;
+  --cm-error:             #B22222;
+  --cm-error-content:     #fafafa;
+
+  /* Foreground / muted aliases */
+  --fg-1: var(--cm-base-content);
+  --fg-2: #4a4a4f;
+  --fg-3: #76767c;
+
+  --bg-1: var(--cm-base-100);
+  --bg-2: var(--cm-base-200);
+  --bg-3: var(--cm-base-300);
+
+  /* Borders */
+  --border-1: rgba(0, 0, 0, 0.08);
+  --border-2: rgba(0, 0, 0, 0.14);
+
+  /* FA duotone secondary often used for orange highlights on icons */
+  --cm-fa-orange:  #F3B140;
+
+  /* Radii */
+  --radius-selector: 0.5rem;
+  --radius-field:    0.5rem;
+  --radius-box:      0.75rem;
+  --radius-pill:     9999px;
+
+  /* Spacing */
+  --space-0:  0;
+  --space-1:  0.25rem;
+  --space-2:  0.5rem;
+  --space-3:  0.75rem;
+  --space-4:  1rem;
+  --space-5:  1.25rem;
+  --space-6:  1.5rem;
+  --space-8:  2rem;
+  --space-10: 2.5rem;
+  --space-12: 3rem;
+  --space-16: 4rem;
+  --space-20: 5rem;
+  --space-24: 6rem;
+
+  /* Shadows — daisyUI depth 1 */
+  --shadow-sm: 0 1px 2px rgba(0,0,0,0.05);
+  --shadow-md: 0 4px 12px rgba(0,0,0,0.08), 0 1px 2px rgba(0,0,0,0.04);
+  --shadow-lg: 0 12px 28px rgba(0,0,0,0.10), 0 4px 8px rgba(0,0,0,0.05);
+  --shadow-xl: 0 24px 48px rgba(0,0,0,0.14);
+
+  /* Motion */
+  --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+  --ease-in-out: cubic-bezier(0.65, 0, 0.35, 1);
+  --t-fast: 120ms;
+  --t-base: 200ms;
+  --t-slow: 320ms;
+}
+
+[data-theme='cmdiy-dark'] {
+  --cm-primary:           #9AAC7F;
+  --cm-secondary:         #F08A54;
+  --cm-accent:            #7A8960;
+
+  --cm-base-100:          #2c2c30;
+  --cm-base-200:          #232327;
+  --cm-base-300:          #1a1a1d;
+  --cm-base-content:      #e7e7e9;
+
+  --cm-neutral:           #d8d8da;
+  --cm-neutral-content:   #2c2c30;
+
+  --cm-info:              #60A5FA;
+  --cm-success:           #89B062;
+  --cm-warning:           #FBBF24;
+  --cm-warning-content:   #1c1c20;
+  --cm-error:             #EF7676;
+
+  --fg-1: var(--cm-base-content);
+  --fg-2: #b6b6bc;
+  --fg-3: #898990;
+
+  --bg-1: var(--cm-base-100);
+  --bg-2: var(--cm-base-200);
+  --bg-3: var(--cm-base-300);
+
+  --border-1: rgba(255, 255, 255, 0.08);
+  --border-2: rgba(255, 255, 255, 0.14);
+
+  --shadow-sm: 0 1px 2px rgba(0,0,0,0.30);
+  --shadow-md: 0 4px 12px rgba(0,0,0,0.45), 0 1px 2px rgba(0,0,0,0.20);
+  --shadow-lg: 0 12px 28px rgba(0,0,0,0.55), 0 4px 8px rgba(0,0,0,0.30);
+  --shadow-xl: 0 24px 48px rgba(0,0,0,0.60);
+}
+
+/* ============================================================
+   TYPOGRAPHY
+============================================================ */
+:root {
+  --font-sans:
+    'Outfit', ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont,
+    'Segoe UI', Roboto, 'Helvetica Neue', Arial, 'Noto Sans', sans-serif;
+
+  --font-display:
+    'futura-pt', 'Futura PT', 'Bahnschrift', 'Trebuchet MS', 'Avenir Next',
+    'Avenir', system-ui, sans-serif;
+
+  --font-mono:
+    ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono',
+    'Courier New', monospace;
+
+  --fs-xs:   0.75rem;
+  --fs-sm:   0.875rem;
+  --fs-base: 1rem;
+  --fs-md:   1.125rem;
+  --fs-lg:   1.25rem;
+  --fs-xl:   1.5rem;
+  --fs-2xl:  1.875rem;
+  --fs-3xl:  2.25rem;
+
+  --lh-tight:  1.1;
+  --lh-snug:   1.25;
+  --lh-normal: 1.5;
+  --lh-relaxed:1.65;
+
+  --tracking-tight:  -0.01em;
+  --tracking-normal: 0;
+  --tracking-wide:    0.04em;
+  --tracking-caps:    0.08em;
+
+  --fw-regular:  400;
+  --fw-medium:   500;
+  --fw-semibold: 600;
+  --fw-bold:     700;
+  --fw-black:    800;
+}
+
+* { box-sizing: border-box; }
+html, body, #__nuxt { height: 100%; margin: 0; }
+
+html, body {
+  font-family: var(--font-sans);
+  font-feature-settings: 'kern' 1, 'liga' 1;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  color: var(--fg-1);
+  background: var(--bg-1);
+}
+
+h1, .h1 { font-size: var(--fs-3xl); font-weight: var(--fw-bold); line-height: var(--lh-tight); letter-spacing: var(--tracking-tight); margin: 0; }
+h2, .h2 { font-size: var(--fs-2xl); font-weight: var(--fw-bold); line-height: var(--lh-snug); margin: 0; }
+h3, .h3 { font-size: var(--fs-xl);  font-weight: var(--fw-semibold); line-height: var(--lh-snug); margin: 0; }
+h4, .h4 { font-size: var(--fs-lg);  font-weight: var(--fw-semibold); line-height: var(--lh-snug); margin: 0; }
+
+p { margin: 0; line-height: var(--lh-relaxed); }
+
+.eyebrow {
+  font-size: var(--fs-xs);
+  text-transform: uppercase;
+  letter-spacing: var(--tracking-caps);
+  color: var(--fg-3);
+  font-weight: var(--fw-semibold);
+}
+
+.text-meta {
+  font-size: var(--fs-xs);
+  color: var(--fg-3);
+  text-transform: uppercase;
+  letter-spacing: var(--tracking-caps);
+  font-weight: var(--fw-semibold);
+}
+
+a, .link {
+  color: var(--cm-primary);
+  text-decoration: none;
+  transition: color var(--t-fast) var(--ease-out);
+}
+a:hover, .link:hover { text-decoration: underline; }
+
+code, pre, kbd, samp { font-family: var(--font-mono); }
+
+/* ============================================================
+   COMPONENTS — buttons, cards, inputs
+   (Mirrors preview/components-*.html from the design system.)
+============================================================ */
+
+.btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  height: 40px;
+  padding: 0 18px;
+  border-radius: var(--radius-field);
+  border: 1px solid transparent;
+  font-family: inherit;
+  font-size: var(--fs-sm);
+  font-weight: var(--fw-bold);
+  cursor: pointer;
+  transition: filter var(--t-fast) var(--ease-out),
+              background var(--t-fast) var(--ease-out);
+  text-decoration: none;
+  color: inherit;
+}
+.btn:hover { filter: brightness(0.95); }
+.btn:active { transform: scale(0.97); }
+.btn:disabled { opacity: 0.55; cursor: not-allowed; filter: none; transform: none; }
+
+.btn-primary { background: var(--cm-primary); color: var(--cm-primary-content); }
+.btn-secondary { background: var(--cm-secondary); color: var(--cm-secondary-content); }
+.btn-outline { background: transparent; color: var(--fg-1); border-color: var(--border-2); }
+.btn-ghost { background: transparent; color: var(--fg-1); }
+.btn-error { background: var(--cm-error); color: var(--cm-error-content); }
+
+.btn-sm { height: 32px; padding: 0 12px; font-size: 13px; }
+.btn-lg { height: 48px; padding: 0 22px; font-size: var(--fs-base); }
+
+.card {
+  background: var(--bg-1);
+  border: 1px solid var(--border-1);
+  border-radius: var(--radius-box);
+  box-shadow: var(--shadow-md);
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+.card-body {
+  padding: var(--space-5);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  flex: 1;
+  min-height: 0;
+}
+.card-actions {
+  display: flex;
+  gap: var(--space-2);
+  align-items: center;
+  justify-content: flex-end;
+}
+
+.input {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 40px;
+  padding: 0 12px;
+  border: 1px solid var(--border-2);
+  border-radius: var(--radius-field);
+  background: var(--bg-1);
+  transition: border-color var(--t-fast), box-shadow var(--t-fast);
+}
+.input:focus-within {
+  border-color: var(--cm-primary);
+  box-shadow: 0 0 0 3px rgba(133, 147, 105, 0.25);
+}
+.input input {
+  flex: 1;
+  border: 0;
+  outline: 0;
+  font: inherit;
+  color: inherit;
+  background: transparent;
+  min-width: 0;
+}
+
+.alert-error {
+  background: rgba(178, 34, 34, 0.08);
+  border: 1px solid rgba(178, 34, 34, 0.25);
+  color: var(--cm-error);
+  padding: var(--space-3) var(--space-4);
+  border-radius: var(--radius-field);
+  font-size: var(--fs-sm);
+  font-family: var(--font-mono);
+  white-space: pre-wrap;
+}
