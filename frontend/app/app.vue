@@ -71,13 +71,19 @@
             </button>
           </div>
         </div>
-        <textarea
-          v-model="yamlSource"
-          class="yaml-editor"
-          spellcheck="false"
-          @keydown.meta.enter.prevent="render"
-          @keydown.ctrl.enter.prevent="render"
-        />
+        <ClientOnly>
+          <MonacoEditor
+            v-model="yamlSource"
+            lang="yaml"
+            class="yaml-editor"
+            :options="monacoOptions"
+            :theme="monacoTheme"
+            @keydown="onEditorKeydown"
+          />
+          <template #fallback>
+            <pre class="yaml-editor-fallback">{{ yamlSource }}</pre>
+          </template>
+        </ClientOnly>
         <div v-if="error" class="alert-error">{{ error }}</div>
       </section>
 
@@ -172,6 +178,35 @@ const error = ref<string | null>(null)
 const result = ref<ParseResult | null>(null)
 
 const { theme, toggle: toggleTheme } = useTheme()
+
+// Monaco bridge: cmdiy/cmdiy-dark map to the closest built-in Monaco themes
+// for now (vs / vs-dark). Phase 3 can register a true CMDIY theme if needed.
+const monacoTheme = computed(() => (theme.value === 'cmdiy-dark' ? 'vs-dark' : 'vs'))
+
+const monacoOptions = {
+  automaticLayout: true,
+  fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Consolas, monospace',
+  fontSize: 13,
+  lineNumbers: 'on' as const,
+  minimap: { enabled: false },
+  scrollBeyondLastLine: false,
+  tabSize: 2,
+  insertSpaces: true,
+  wordWrap: 'on' as const,
+  renderLineHighlight: 'all' as const,
+  padding: { top: 12, bottom: 12 },
+}
+
+function onEditorKeydown(e: KeyboardEvent) {
+  // Monaco swallows the textarea-style listeners on the host element, so we
+  // intercept Cmd/Ctrl+Enter at this layer and forward to render(). Other
+  // keystrokes pass through to Monaco unchanged.
+  if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
+    e.preventDefault()
+    e.stopPropagation()
+    void render()
+  }
+}
 
 const templatesOpen = ref(false)
 
@@ -387,18 +422,23 @@ onMounted(() => {
 .yaml-editor {
   flex: 1;
   width: 100%;
-  border: 0;
-  outline: 0;
-  resize: none;
+  min-height: 0;
+  /* Monaco renders its own viewport / scrollbars / focus ring. We just
+     own the outer box. */
+}
+.yaml-editor-fallback {
+  flex: 1;
+  width: 100%;
+  margin: 0;
   padding: var(--space-4);
   font-family: var(--font-mono);
   font-size: 13px;
   line-height: 1.55;
   color: var(--fg-1);
   background: var(--bg-1);
+  overflow: auto;
   min-height: 0;
 }
-.yaml-editor:focus { background: var(--bg-1); }
 
 .alert-error {
   margin: 0 var(--space-4) var(--space-4);
