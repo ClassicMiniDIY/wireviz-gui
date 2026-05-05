@@ -2,7 +2,7 @@
   <div class="app-shell">
     <header class="topnav">
       <div class="brand">
-        <img src="/brand/logo-wheel.svg" alt="" class="wheel" />
+        <img :src="wheelSrc" alt="" class="wheel" />
         <div class="brand-text">
           <span class="eyebrow">Part of Classic Mini DIY</span>
           <h1 class="brand-title">WireViz GUI</h1>
@@ -15,7 +15,15 @@
         <span v-else class="version">
           <i class="fas fa-circle status-dot status-down" /> sidecar offline
         </span>
-        <a class="github-link" href="https://github.com/ClassicMiniDIY/wireviz-gui" target="_blank" rel="noopener" aria-label="GitHub">
+        <button
+          class="icon-btn"
+          :title="theme === 'cmdiy-dark' ? 'Switch to light' : 'Switch to dark'"
+          :aria-label="theme === 'cmdiy-dark' ? 'Switch to light theme' : 'Switch to dark theme'"
+          @click="toggleTheme"
+        >
+          <i :class="theme === 'cmdiy-dark' ? 'fas fa-sun' : 'fas fa-moon'" />
+        </button>
+        <a class="icon-btn" href="https://github.com/ClassicMiniDIY/wireviz-gui" target="_blank" rel="noopener" aria-label="GitHub">
           <i class="fa-brands fa-github" />
         </a>
       </div>
@@ -55,17 +63,20 @@
           <div class="card-actions">
             <button
               class="btn btn-outline btn-sm"
-              :disabled="!result?.svg"
-              @click="downloadFile('svg')"
+              :disabled="!result?.svg || busy"
+              @click="downloadSvg"
             >
               <i class="fas fa-download" /> SVG
             </button>
             <button
               class="btn btn-outline btn-sm"
-              :disabled="!result?.png_base64"
-              @click="downloadFile('png')"
+              :disabled="!result?.svg || downloadingPng"
+              :title="'Render PNG with embedded YAML for round-trip editing'"
+              @click="downloadPng"
             >
-              <i class="fas fa-download" /> PNG
+              <i v-if="!downloadingPng" class="fas fa-download" />
+              <i v-else class="fas fa-circle-notch fa-spin" />
+              PNG
             </button>
           </div>
         </div>
@@ -126,14 +137,23 @@ connections:
 
 type ParseResult = {
   svg?: string
-  png_base64?: string
-  tsv?: string
   bom?: any[]
 }
 
 const busy = ref(false)
+const downloadingPng = ref(false)
 const error = ref<string | null>(null)
 const result = ref<ParseResult | null>(null)
+
+const { theme, toggle: toggleTheme } = useTheme()
+
+// Swap the wheel-mark PNG when the theme flips so it stays legible
+// against the header surface. The SVG version of the lockup is shape-
+// only and disappears on the dark background, so we use the rendered
+// black/white PNG variants instead.
+const wheelSrc = computed(() =>
+  theme.value === 'cmdiy-dark' ? '/brand/logo-wheel-white.png' : '/brand/logo-wheel-black.png',
+)
 
 const { data: health } = await useFetch<{ wireviz: string }>('/api/wireviz/health', {
   default: () => null,
@@ -143,9 +163,10 @@ async function render() {
   busy.value = true
   error.value = null
   try {
+    // Live preview only needs SVG. PNG round-trips via /render/png on download.
     result.value = await $fetch<ParseResult>('/api/wireviz/parse', {
       method: 'POST',
-      body: { yaml: yamlSource.value, formats: ['svg', 'png', 'tsv'] },
+      body: { yaml: yamlSource.value, formats: ['svg'] },
     })
   } catch (err: any) {
     error.value = err?.data?.detail ?? err?.statusMessage ?? String(err)
@@ -176,26 +197,36 @@ async function openPng(e: Event) {
   }
 }
 
-function downloadFile(kind: 'svg' | 'png') {
-  const r = result.value
-  if (!r) return
-  let blob: Blob
-  if (kind === 'svg' && r.svg) {
-    blob = new Blob([r.svg], { type: 'image/svg+xml' })
-  } else if (kind === 'png' && r.png_base64) {
-    const bin = atob(r.png_base64)
-    const bytes = new Uint8Array(bin.length)
-    for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i)
-    blob = new Blob([bytes], { type: 'image/png' })
-  } else {
-    return
-  }
+function triggerDownload(blob: Blob, filename: string) {
   const url = URL.createObjectURL(blob)
   const a = document.createElement('a')
   a.href = url
-  a.download = `harness.${kind}`
+  a.download = filename
   a.click()
   URL.revokeObjectURL(url)
+}
+
+function downloadSvg() {
+  if (!result.value?.svg) return
+  triggerDownload(new Blob([result.value.svg], { type: 'image/svg+xml' }), 'harness.svg')
+}
+
+async function downloadPng() {
+  if (!result.value?.svg) return
+  downloadingPng.value = true
+  error.value = null
+  try {
+    const buf = await $fetch<ArrayBuffer>('/api/wireviz/render/png', {
+      method: 'POST',
+      body: { yaml: yamlSource.value, embed_yaml: true },
+      responseType: 'arrayBuffer',
+    })
+    triggerDownload(new Blob([buf], { type: 'image/png' }), 'harness.png')
+  } catch (err: any) {
+    error.value = err?.data?.detail ?? err?.statusMessage ?? String(err)
+  } finally {
+    downloadingPng.value = false
+  }
 }
 
 onMounted(() => {
@@ -260,7 +291,7 @@ onMounted(() => {
 .status-ok { color: var(--cm-success); }
 .status-down { color: var(--cm-error); }
 
-.github-link {
+.icon-btn {
   color: var(--fg-2);
   font-size: var(--fs-lg);
   display: inline-flex;
@@ -269,9 +300,12 @@ onMounted(() => {
   width: 32px;
   height: 32px;
   border-radius: var(--radius-field);
+  border: 0;
+  background: transparent;
+  cursor: pointer;
   transition: background var(--t-fast), color var(--t-fast);
 }
-.github-link:hover {
+.icon-btn:hover {
   background: var(--bg-2);
   color: var(--fg-1);
   text-decoration: none;
