@@ -196,6 +196,15 @@ const monacoOptions = {
   wordWrap: 'on' as const,
   renderLineHighlight: 'all' as const,
   padding: { top: 12, bottom: 12 },
+  // Auto-pop the suggest widget while typing. Default is `{other: 'on',
+  // comments: 'off', strings: 'off'}` — but Monaco's YAML tokenizer
+  // classifies the right-hand side of `key: value` as a string, so
+  // without `strings: 'on'` autocomplete only fires on Ctrl+Space.
+  quickSuggestions: { other: 'on', comments: 'off', strings: 'on' } as const,
+  suggestOnTriggerCharacters: true,
+  // Don't auto-accept on Enter — Enter is "newline" in YAML, not "accept".
+  acceptSuggestionOnEnter: 'off' as const,
+  tabCompletion: 'on' as const,
 }
 
 function onEditorKeydown(e: KeyboardEvent) {
