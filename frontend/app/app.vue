@@ -202,8 +202,11 @@ const monacoOptions = {
   // without `strings: 'on'` autocomplete only fires on Ctrl+Space.
   quickSuggestions: { other: 'on', comments: 'off', strings: 'on' } as const,
   suggestOnTriggerCharacters: true,
-  // Don't auto-accept on Enter — Enter is "newline" in YAML, not "accept".
-  acceptSuggestionOnEnter: 'off' as const,
+  // 'smart' = Enter accepts the highlighted suggestion only when it would
+  // make a textual change (i.e. you arrowed into something different from
+  // what's already typed). Plain Enter still falls through to newline when
+  // the suggestion matches the typed prefix exactly. Tab always accepts.
+  acceptSuggestionOnEnter: 'smart' as const,
   tabCompletion: 'on' as const,
 }
 
