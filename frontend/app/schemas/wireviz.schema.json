@@ -269,11 +269,11 @@
     },
     "colorCode": {
       "type": "string",
-      "description": "IEC 60757 two-letter color code. Combine codes for multi-colour wires (e.g. WHGN = white/green stripe). See https://en.wikipedia.org/wiki/IEC_60757 for the full set.",
+      "description": "IEC 60757 two-letter color code. Combine codes for multi-colour wires (e.g. WHGN = white/green stripe). Codes are case-sensitive — use uppercase. See https://en.wikipedia.org/wiki/IEC_60757 for the full set.",
       "examples": [
         "BK", "WH", "GY", "PK", "RD", "OG", "YE", "OL", "GN", "TQ",
-        "LB", "BU", "VT", "PU", "BN", "BG", "IV", "SL", "CU", "GD",
-        "WHGN", "BNGN", "WHYE", "YEBN", "WHRD", "BNRD"
+        "LB", "BU", "VT", "BN", "BG", "IV", "SL", "CU", "SN", "SR", "GD",
+        "WHGN", "BNGN", "WHYE", "YEBN", "WHRD", "BNRD", "WHGY", "GYBN"
       ]
     }
   }

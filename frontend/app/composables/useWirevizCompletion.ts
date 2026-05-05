@@ -53,32 +53,105 @@ function unwrap(s: JSONSchema | undefined): JSONSchema {
  * sits in. We do this by walking the lines above the cursor and tracking
  * indent levels, mapping each indent step to the matching schema node.
  *
- * This is intentionally simple — it handles the common shapes
- * (top-level key, inside connectors.X1, inside cables.W1, value-of-key)
- * and falls back to the root schema if it can't decide.
+ * Two frame types model the YAML structure:
+ *   - 'key'  — a `key:` mapping at a given indent
+ *   - 'item' — a `- ` list-item marker at a given indent
+ *
+ * A line like `  - type: Foo` produces BOTH frames at once: an item
+ * frame at the indent of the dash, then a key frame for `type` at
+ * the indent of the dash + 2. That's how YAML treats it logically
+ * (the `- ` and a separate `type: Foo` line at one extra indent are
+ * structurally identical), and it lets us walk into items["type"]
+ * for schemas like additional_components → AdditionalComponent.
+ *
+ * Resolution descends `properties` for keys, `additionalProperties`
+ * for designator maps (connectors → X1), and `items` for arrays.
  */
-function locateScope(lines: string[], lineIndex: number): JSONSchema {
-  // Walk upwards collecting the chain of "key:" headers above us, paying
-  // attention to indent. Each indent decrease pops a level off the chain.
-  type Frame = { indent: number; key: string }
+function locateScope(
+  lines: string[],
+  lineIndex: number,
+  cursorColumn: number = 1,
+): JSONSchema {
+  type KeyFrame = { kind: 'key'; indent: number; key: string }
+  type ItemFrame = { kind: 'item'; indent: number }
+  type Frame = KeyFrame | ItemFrame
+
   const chain: Frame[] = []
-  for (let i = 0; i < lineIndex; i++) {
-    const line = lines[i] ?? ''
+  // Walk every line up to AND INCLUDING the cursor line. The cursor line
+  // matters: when the user is typing right after a `- ` marker, that
+  // marker is on the cursor line itself and would otherwise be missed.
+  // For the cursor line we only consider text before the cursor.
+
+  // Effective indent of the cursor's intended position. For a typical
+  // key line this is the leading whitespace; for a `- ` line where the
+  // cursor sits past the dash it's "leading whitespace + 2" (the column
+  // past the `- ` is the item-content indent).
+  const cursorLineRaw = lines[lineIndex] ?? ''
+  const cursorLineTrunc = cursorLineRaw.slice(0, cursorColumn - 1)
+  const dashOnCursorLine = cursorLineTrunc.match(/^(\s*)-(?:\s|$)/)
+  const cursorEffectiveIndent = dashOnCursorLine
+    ? dashOnCursorLine[1]!.length + 2
+    : (cursorLineTrunc.match(/^(\s*)/)?.[1]?.length ?? 0)
+
+  for (let i = 0; i <= lineIndex; i++) {
+    const raw = lines[i] ?? ''
+    const line = i < lineIndex ? raw : raw.slice(0, cursorColumn - 1)
     if (!line.trim() || line.trimStart().startsWith('#')) continue
+
     const indentMatch = line.match(/^(\s*)/)
     const indent = indentMatch ? indentMatch[1]!.length : 0
+
+    // Pop frames at the same or deeper indent — siblings/children of a
+    // prior tree position can't be ancestors of the cursor.
+    const popTo = (cutoff: number) => {
+      while (chain.length && chain[chain.length - 1]!.indent >= cutoff) {
+        chain.pop()
+      }
+    }
+
+    // List-item marker: `- ` at the start of the line, optionally with
+    // an inline `key: value` after it. The dash sits at `indent`; any
+    // inline key sits at `indent + 2` (the column past `- `).
+    const itemMatch = line.match(/^(\s*)-(?:\s+(.*))?$/)
+    if (itemMatch) {
+      popTo(indent)
+      chain.push({ kind: 'item', indent })
+      const rest = itemMatch[2] ?? ''
+      const inlineKey = rest.match(/^([A-Za-z_][A-Za-z0-9_]*)\s*:/)
+      if (inlineKey) {
+        chain.push({ kind: 'key', indent: indent + 2, key: inlineKey[1]! })
+      }
+      continue
+    }
+
+    // Plain `key:` line.
     const keyMatch = line.match(/^(\s*)([A-Za-z_][A-Za-z0-9_]*)\s*:\s*(.*)$/)
     if (!keyMatch) continue
-    while (chain.length && chain[chain.length - 1]!.indent >= indent) chain.pop()
-    chain.push({ indent, key: keyMatch[2]! })
+    popTo(indent)
+    chain.push({ kind: 'key', indent, key: keyMatch[2]! })
   }
 
-  // Resolve the chain through the schema. For object-of-X maps (connectors,
-  // cables) the second-level key is a user-chosen designator and the schema
-  // hangs off `additionalProperties`.
+  // Strip trailing frames at indent >= cursor — those are siblings (or
+  // children) of the cursor's intended position, not ancestors.
+  while (
+    chain.length &&
+    chain[chain.length - 1]!.indent >= cursorEffectiveIndent
+  ) {
+    chain.pop()
+  }
+
+  // Resolve the chain through the schema.
   let node: JSONSchema = schema
   for (const frame of chain) {
     node = unwrap(node)
+    if (frame.kind === 'item') {
+      if (node.items && typeof node.items === 'object') {
+        node = unwrap(node.items)
+      } else {
+        return {}
+      }
+      continue
+    }
     if (node.properties?.[frame.key]) {
       node = unwrap(node.properties[frame.key])
     } else if (node.additionalProperties && typeof node.additionalProperties === 'object') {
@@ -86,7 +159,6 @@ function locateScope(lines: string[], lineIndex: number): JSONSchema {
       // the value's shape lives in additionalProperties.
       node = unwrap(node.additionalProperties)
     } else {
-      // Lost track of the scope — bail and offer no completions for this branch.
       return {}
     }
   }
@@ -218,7 +290,7 @@ export function registerWirevizCompletion(monaco: typeof Monaco) {
       }
 
       // Resolve the YAML scope once; both branches need it.
-      const scope = locateScope(lines, position.lineNumber - 1)
+      const scope = locateScope(lines, position.lineNumber - 1, position.column)
 
       // Value branch: are we past a colon on this line?
       const valueSchema = valuePositionField(beforeCursor, scope)
@@ -244,7 +316,7 @@ export function registerWirevizHover(monaco: typeof Monaco) {
       const word = model.getWordAtPosition(position)
       if (!word) return null
       const lines = model.getLinesContent()
-      const scope = locateScope(lines, position.lineNumber - 1)
+      const scope = locateScope(lines, position.lineNumber - 1, position.column)
       const sub = unwrap(scope.properties?.[word.word])
       if (!sub.description) return null
       return {
