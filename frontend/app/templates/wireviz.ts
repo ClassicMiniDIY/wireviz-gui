@@ -188,6 +188,175 @@ connections:
   },
 
   {
+    id: 'bwtm-tps',
+    name: 'TPS sensor (BWTM)',
+    description: '3-pin throttle position sensor → ECU. From the BadWolfTurboMap reference set.',
+    yaml: `metadata:
+  title: TPS (Throttle Position Sensor) Wiring
+  description: 3-pin TPS connector to ECU wiring diagram
+
+connectors:
+  TPS:
+    type: Connector
+    subtype: 3-pin male
+    pinlabels: [5V - A, Signal GND - B, TPS Signal - C]
+    notes: Throttle Position Sensor
+
+  ECU:
+    type: Connector
+    subtype: ECU socket
+    pinlabels: [5V Supply, Signal Ground, TPS - AVI]
+    notes: Colors may vary depending on the manufacturer.
+
+cables:
+  TPS_Harness:
+    gauge: 22 AWG
+    length: 0.5 m
+    wirecount: 3
+    colors: [OG, BKWH, WHOG]
+    notes: Colors used may vary depending on the manufacturer.
+
+connections:
+  - - TPS: [1, 2, 3]
+    - TPS_Harness: [1, 2, 3]
+    - ECU: [1, 2, 3]
+`,
+  },
+
+  {
+    id: 'bwtm-trigger-sensor',
+    name: 'Crank trigger sensor (BWTM)',
+    description: 'Hall-effect 3-pin crank sensor with switched-12V power and signal ground.',
+    yaml: `metadata:
+  title: Trigger Sensor Wiring
+  description: 3-pin trigger sensor connection diagram
+
+connectors:
+  Sensor:
+    type: 3-pin Junior Timer
+    pincount: 3
+    pinlabels: [Signal Ground, 12V, 5V Signal]
+    pins: [1, 2, 3]
+    notes: Hall effect crank sensor
+
+  ECU:
+    type: ECU Connector
+    pincount: 2
+    pinlabels: [Signal Ground, Crank Trigger +]
+    pins: [1, 2]
+    notes: Note the signal ground pin is used not the battery ground. This is very important
+
+  Battery:
+    type: Switched input
+    pincount: 1
+    pinlabels: [12V Power]
+    pins: [1]
+    notes: Should be from switched ignition only 12v signal
+
+cables:
+  Harness:
+    wirecount: 3
+    colors: [BKWH, RD, YE]
+    notes: Colors may vary depending on wiring harness and ECU
+
+connections:
+  - - Sensor: [1, 2, 3]
+    - Harness: [1, 2, 3]
+  - - Harness: [1, 3]
+    - ECU: [1, 2]
+  - - Harness: 2
+    - Battery: 1
+`,
+  },
+
+  {
+    id: 'bwtm-dbw-pedal',
+    name: 'DBW pedal (BWTM)',
+    description: '6-pin drive-by-wire pedal sensor → ECU (Nissan-style connector, dual sensor).',
+    yaml: `metadata:
+  title: DBW Pedal Wiring
+  description: 6-pin DBW pedal connection diagram
+
+connectors:
+  Pedal Sensor:
+    type: Nissan Pedal Connector
+    pincount: 6
+    pinlabels:
+      [
+        Sensor Ground,
+        Pedal Sensor 1,
+        Sensor Ground,
+        5v feed,
+        Pedal Sensor 2,
+        5v feed,
+      ]
+    pins: [A, B, C, D, E, F]
+
+  ECU:
+    type: ECU Pins
+    pincount: 6
+    pinlabels:
+      [
+        Sensor Ground,
+        Pedal Sensor (AVI),
+        Sensor Ground,
+        5v feed,
+        Pedal Sensor (AVI),
+        5v feed,
+      ]
+    pins: [A, B, C, D, E, F]
+    notes: Wire colors may vary depending on your ECU
+
+cables:
+  Harness:
+    wirecount: 6
+    colors: [BKWH, WHBN, BKWH, OG, WHBK, OG]
+    notes: Wire colors may vary depending on your ECU
+
+connections:
+  - - Pedal Sensor: [A, B, C, D, E, F]
+    - Harness: [1, 2, 3, 4, 5, 6]
+    - ECU: [A, B, C, D, E, F]
+`,
+  },
+
+  {
+    id: 'bwtm-dbw-throttle',
+    name: 'DBW throttle body (BWTM)',
+    description: '6-pin drive-by-wire throttle: dual-rail motor drive plus dual TPS feedback.',
+    yaml: `metadata:
+  title: DBW Throttle Body Wiring
+  description: 6-pin DBW throttle body connection diagram
+
+connectors:
+  Throttle:
+    type: 6-pin DBW Throttle
+    pincount: 6
+    pinlabels:
+      [DBW Motor -, Signal Ground, 5V, DBW Motor +, TPS Input 1, TPS Input 2]
+    pins: [1, 2, 3, 4, 5, 6]
+
+  ECU:
+    type: ECU Pins
+    pincount: 6
+    pinlabels:
+      [DBW 1 - HBO, Signal Ground, 5V, DBW 2 HBO, TPS 1 - AVI, TPS 2 - AVI]
+    pins: [1, 2, 3, 4, 5, 6]
+
+cables:
+  Harness:
+    wirecount: 6
+    colors: [BNBK, BKWH, OG, BNRD, WHBN, WHBK]
+    notes: Wire colors may vary depending on your ECU
+
+connections:
+  - - Throttle: [1, 2, 3, 4, 5, 6]
+    - Harness: [1, 2, 3, 4, 5, 6]
+    - ECU: [1, 2, 3, 4, 5, 6]
+`,
+  },
+
+  {
     id: 'mini-headlamp',
     name: 'Classic Mini headlamp loom',
     description: 'Mini-themed: bullet-connector pigtail from main loom to a sealed-beam headlamp.',
