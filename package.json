@@ -1,0 +1,19 @@
+{
+  "name": "wireviz-gui",
+  "private": true,
+  "version": "0.1.0",
+  "description": "Nuxt 4 GUI + Python sidecar for WireViz 0.5.0",
+  "scripts": {
+    "dev": "concurrently -n sidecar,frontend -c blue,green \"pnpm dev:sidecar\" \"pnpm dev:frontend\"",
+    "dev:sidecar": "cd sidecar && .venv/bin/wireviz-gui-sidecar --reload",
+    "dev:frontend": "cd frontend && pnpm dev",
+    "build": "cd frontend && pnpm build",
+    "test:sidecar": "cd sidecar && .venv/bin/pytest",
+    "setup:sidecar": "cd sidecar && uv venv --python 3.12 .venv && .venv/bin/uv pip install -e \".[dev]\"",
+    "setup:frontend": "cd frontend && pnpm install"
+  },
+  "devDependencies": {
+    "concurrently": "^9.1.0"
+  },
+  "packageManager": "pnpm@10.6.2"
+}
