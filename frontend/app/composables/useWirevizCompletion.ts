@@ -159,37 +159,56 @@ function buildValueCompletions(
   }))
 }
 
+/**
+ * Decide whether the cursor sits in the value half of a "key: value" line,
+ * and if so return the matching field schema. Handles three shapes:
+ *
+ *   color_code: D|             -> value of color_code, prefix "D"
+ *   colors: [WH, B|]           -> value of colors[items], prefix "B"
+ *   color: |                   -> value of color, no prefix
+ *
+ * When the cursor is inside a `[...]` array literal we descend into the
+ * field's `items` schema so the completions come from the element type
+ * (e.g. colorCode) rather than the array container itself.
+ */
+function valuePositionField(
+  beforeCursor: string,
+  scope: JSONSchema,
+): JSONSchema | null {
+  // Find the colon that splits "key: value" on this line. We use the
+  // FIRST colon — anything after it is the value half, even if the
+  // value itself happens to contain colons (e.g. inline timestamps).
+  const colonIndex = beforeCursor.indexOf(':')
+  if (colonIndex < 0) return null
+
+  const keyText = beforeCursor.slice(0, colonIndex).trim()
+  if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(keyText)) return null
+
+  const fieldSchema = scope.properties?.[keyText]
+  if (!fieldSchema) return null
+  const sub = unwrap(fieldSchema)
+
+  // Inside a `[...]` array literal? Use the items schema so we offer
+  // element-level enum / examples instead of the array container itself.
+  const afterColon = beforeCursor.slice(colonIndex + 1)
+  const inArray =
+    afterColon.lastIndexOf('[') > afterColon.lastIndexOf(']')
+  if (inArray && sub.items && typeof sub.items === 'object') {
+    return unwrap(sub.items)
+  }
+  return sub
+}
+
 export function registerWirevizCompletion(monaco: typeof Monaco) {
   return monaco.languages.registerCompletionItemProvider('yaml', {
-    triggerCharacters: [' ', ':', '\n'],
+    // Letters / digits are also handled — Monaco re-queries the provider
+    // as the user types, and the trigger chars cover the cases where we
+    // want to fire mid-line on an empty word (after `: `, after `[`).
+    triggerCharacters: [' ', ':', '[', ',', '\n'],
     provideCompletionItems(model, position) {
       const lines = model.getLinesContent()
       const currentLine = lines[position.lineNumber - 1] ?? ''
       const beforeCursor = currentLine.slice(0, position.column - 1)
-
-      // Are we typing a value (after "key: ")? If so, find the field
-      // schema and offer enum / boolean / examples for it.
-      const valueMatch = beforeCursor.match(/^(\s*)([A-Za-z_][A-Za-z0-9_]*)\s*:\s*([^\s].*)?$/)
-      if (valueMatch && (valueMatch[3] === undefined || valueMatch[3].trim() === '')) {
-        const keyName = valueMatch[2]!
-        const scope = locateScope(lines, position.lineNumber - 1)
-        const fieldSchema = scope.properties?.[keyName]
-        if (fieldSchema) {
-          const word = model.getWordUntilPosition(position)
-          const range: Monaco.IRange = {
-            startLineNumber: position.lineNumber,
-            endLineNumber: position.lineNumber,
-            startColumn: word.startColumn,
-            endColumn: word.endColumn,
-          }
-          return { suggestions: buildValueCompletions(monaco, fieldSchema, range) }
-        }
-      }
-
-      // Otherwise we're typing a key. Resolve the surrounding scope and
-      // offer its known properties.
-      const scope = locateScope(lines, position.lineNumber - 1)
-      if (!scope.properties) return { suggestions: [] }
       const word = model.getWordUntilPosition(position)
       const range: Monaco.IRange = {
         startLineNumber: position.lineNumber,
@@ -197,6 +216,19 @@ export function registerWirevizCompletion(monaco: typeof Monaco) {
         startColumn: word.startColumn,
         endColumn: word.endColumn,
       }
+
+      // Resolve the YAML scope once; both branches need it.
+      const scope = locateScope(lines, position.lineNumber - 1)
+
+      // Value branch: are we past a colon on this line?
+      const valueSchema = valuePositionField(beforeCursor, scope)
+      if (valueSchema) {
+        return { suggestions: buildValueCompletions(monaco, valueSchema, range) }
+      }
+
+      // Key branch: cursor is at the start of a line / in a key word —
+      // offer the surrounding scope's known properties.
+      if (!scope.properties) return { suggestions: [] }
       return { suggestions: buildKeyCompletions(monaco, scope, range) }
     },
   })
