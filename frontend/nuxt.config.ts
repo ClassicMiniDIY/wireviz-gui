@@ -3,6 +3,16 @@ export default defineNuxtConfig({
   compatibilityDate: '2025-07-15',
   devtools: { enabled: true },
 
+  modules: ['nuxt-monaco-editor'],
+
+  // monaco-editor ships its workers as separate bundles. Keep the
+  // built-in language workers Monaco needs (the YAML one is handled
+  // separately by monaco-yaml in Phase 3).
+  monacoEditor: {
+    locale: 'en',
+    componentName: { codeEditor: 'MonacoEditor' },
+  },
+
   // CMDIY design tokens (olive/burnt-orange brand). Loaded as a global
   // stylesheet rather than scoped to the page so server-rendered chrome
   // (error pages, future routes) inherit the palette automatically.
