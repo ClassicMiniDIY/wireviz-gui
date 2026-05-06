@@ -304,3 +304,32 @@ def test_parse_rejects_unknown_format(client):
     )
     assert r.status_code == 400
     assert "pdf" in r.json()["detail"].lower()
+
+
+def test_spool_streams_uploads_without_buffering(client, monkeypatch):
+    # Regression: addresses PR review feedback about reading uploads with
+    # upload.file.read() (full payload into memory). The fix uses
+    # shutil.copyfileobj — verify that the streaming path is actually
+    # taken by stubbing copyfileobj and asserting it's called.
+    import shutil as _shutil
+
+    from wireviz_gui_sidecar import app as sidecar_app
+
+    calls: list[tuple[str, int]] = []
+    real_copy = _shutil.copyfileobj
+
+    def spy_copyfileobj(src, dst, *a, **kw):
+        # Capture that we were called with a non-trivial source. The
+        # source object is upload.file (a SpooledTemporaryFile-like).
+        calls.append(("copy", id(src)))
+        return real_copy(src, dst, *a, **kw)
+
+    monkeypatch.setattr(sidecar_app.shutil, "copyfileobj", spy_copyfileobj)
+
+    r = client.post(
+        "/parse-multipart",
+        data={"yaml": YAML_WITH_IMAGE, "formats": "svg"},
+        files=[("files", ("cross-section.png", TINY_PNG, "image/png"))],
+    )
+    assert r.status_code == 200
+    assert len(calls) == 1, "exactly one upload should have been streamed"

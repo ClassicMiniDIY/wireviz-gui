@@ -25,6 +25,7 @@ from __future__ import annotations
 import base64
 import io
 import logging
+import shutil
 import tempfile
 from pathlib import Path
 from typing import Any
@@ -160,7 +161,12 @@ def _spool_assets_to_tempdir(files: list[UploadFile]) -> tempfile.TemporaryDirec
         if not name:
             raise HTTPException(400, "Asset upload missing a filename.")
         target = Path(td.name) / name
-        target.write_bytes(upload.file.read())
+        # Stream the upload to disk in chunks rather than .read()ing the
+        # full payload into memory first. Matters when users attach
+        # multi-MB photos / scans — we don't want a single request to be
+        # able to allocate hundreds of MB on the sidecar.
+        with target.open("wb") as fh:
+            shutil.copyfileobj(upload.file, fh)
     return td
 
 

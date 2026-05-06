@@ -17,9 +17,8 @@ export default defineVitestConfig({
     // the Nuxt test environment leaves a Vite server / event listeners
     // alive after the suite finishes ("Tests closed but something
     // prevents exit"), which leaks a non-zero exit and breaks CI.
+    // (Vitest 4 moved per-pool options to the top level.)
     pool: 'forks',
-    poolOptions: {
-      forks: { singleFork: false },
-    },
+    isolate: true,
   },
 })

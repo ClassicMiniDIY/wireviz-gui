@@ -34,6 +34,19 @@ type JSONSchema = {
 
 const schema = wirevizSchema as unknown as JSONSchema
 
+// Patterns for matching YAML keys. We accept identifier-like names with
+// dashes (e.g. `pin-labels`) and the YAML merge key `<<` (used by
+// templates that reuse anchors via `<<: *anchor`). Keys that don't fit
+// these — quoted strings, complex keys, etc. — get skipped during scope
+// resolution; that's a reasonable degradation since they're rare in
+// WireViz YAML and skipping them just leaves more ancestor frames in
+// the chain than necessary, not less.
+//
+// YAML_KEY_RE matches `key:` at the start of a string; YAML_KEY_LINE_RE
+// is the same pattern anchored to a full line for top-level scanning.
+const YAML_KEY_RE = /^([A-Za-z_][A-Za-z0-9_-]*|<<)\s*:/
+const YAML_KEY_LINE_RE = /^(\s*)([A-Za-z_][A-Za-z0-9_-]*|<<)\s*:\s*(.*)$/
+
 function resolveRef(ref: string): JSONSchema {
   // We only support local refs of the form "#/definitions/<name>".
   const path = ref.replace(/^#\//, '').split('/')
@@ -42,9 +55,19 @@ function resolveRef(ref: string): JSONSchema {
   return node ?? {}
 }
 
-function unwrap(s: JSONSchema | undefined): JSONSchema {
+// Hard ceiling on $ref resolution depth so a malformed schema with a
+// circular reference can't stack-overflow the editor. Our real schema
+// only chains one level deep (e.g. cable.colors → array of colorCode),
+// so 16 leaves enormous headroom; if we ever blow past it we'd rather
+// see an empty completion list than a frozen tab.
+const MAX_REF_DEPTH = 16
+
+function unwrap(s: JSONSchema | undefined, depth = 0): JSONSchema {
   if (!s) return {}
-  if (s.$ref) return unwrap(resolveRef(s.$ref))
+  if (s.$ref) {
+    if (depth >= MAX_REF_DEPTH) return {}
+    return unwrap(resolveRef(s.$ref), depth + 1)
+  }
   return s
 }
 
@@ -117,7 +140,7 @@ export function locateScope(
       popTo(indent)
       chain.push({ kind: 'item', indent })
       const rest = itemMatch[2] ?? ''
-      const inlineKey = rest.match(/^([A-Za-z_][A-Za-z0-9_]*)\s*:/)
+      const inlineKey = rest.match(YAML_KEY_RE)
       if (inlineKey) {
         chain.push({ kind: 'key', indent: indent + 2, key: inlineKey[1]! })
       }
@@ -125,7 +148,7 @@ export function locateScope(
     }
 
     // Plain `key:` line.
-    const keyMatch = line.match(/^(\s*)([A-Za-z_][A-Za-z0-9_]*)\s*:\s*(.*)$/)
+    const keyMatch = line.match(YAML_KEY_LINE_RE)
     if (!keyMatch) continue
     popTo(indent)
     chain.push({ kind: 'key', indent, key: keyMatch[2]! })
@@ -177,12 +200,21 @@ export function buildKeyCompletions(
     const isArray = sub.type === 'array'
     // For scalar fields we want `key: ` ready for typing; for objects/arrays
     // we drop a structured snippet so the cursor lands on a usable shape.
+    //
+    // Monaco choice-snippet syntax `${1|a,b|}` uses `,` as the value
+    // separator AND `|` as the delimiter — both are unescapable in the
+    // current snippet grammar. If any enum value contains either, the
+    // snippet would parse ambiguously, so we fall back to a plain
+    // `key: ` and let the regular completion provider surface the
+    // value list once the user starts typing the value.
+    const enumSafeForSnippet =
+      sub.enum && sub.enum.every((v) => !v.includes(',') && !v.includes('|'))
     const insertText = isArray
       ? `${key}:\n  - $0`
       : isObject
         ? `${key}:\n  $0`
-        : sub.enum
-          ? `${key}: \${1|${sub.enum.join(',')}|}$0`
+        : enumSafeForSnippet
+          ? `${key}: \${1|${sub.enum!.join(',')}|}$0`
           : `${key}: $0`
     return {
       label: key,
@@ -254,7 +286,7 @@ export function valuePositionField(
   if (colonIndex < 0) return null
 
   const keyText = beforeCursor.slice(0, colonIndex).trim()
-  if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(keyText)) return null
+  if (!/^([A-Za-z_][A-Za-z0-9_-]*|<<)$/.test(keyText)) return null
 
   const fieldSchema = scope.properties?.[keyText]
   if (!fieldSchema) return null
