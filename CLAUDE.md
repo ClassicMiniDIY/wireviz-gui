@@ -7,7 +7,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 A two-process desktop-style web app that turns [WireViz](https://github.com/ClassicMiniDIY/WireViz) YAML into rendered harness diagrams interactively:
 
 - **`frontend/`** — Nuxt 4 (compatibilityDate `2025-07-15`). Single-page editor + diagram preview. Nitro server routes under `server/api/wireviz/*` proxy to the sidecar so the sidecar URL is server-only and CORS doesn't fire in production.
-- **`sidecar/`** — Python FastAPI service (`wireviz_gui_sidecar`) that imports WireViz 0.5.0 as a library. Listens on `127.0.0.1:8765` by default. This is the **only** place WireViz is loaded.
+- **`sidecar/`** — Python FastAPI service (`wireviz_gui_sidecar`) that imports WireViz 1.0.0 as a library. Listens on `127.0.0.1:8765` by default. This is the **only** place WireViz is loaded.
 
 The engine repo lives next to this one at `../WireViz` (absolute: `/Users/colegentry/Development/WireViz`) and is installed editably — its `CLAUDE.md` documents the engine internals and is required reading before changing anything that crosses the API boundary.
 
@@ -23,10 +23,10 @@ pnpm dev                 # both processes via concurrently: sidecar :8765, Nuxt 
 pnpm dev:sidecar         # uvicorn --reload only
 pnpm dev:frontend        # nuxt dev only
 
-# Tests (sidecar + frontend, 67 total)
+# Tests (sidecar + frontend, 98 total)
 pnpm test                # both runners
-pnpm test:sidecar        # 16 pytest tests (FastAPI TestClient against the real engine)
-pnpm test:frontend       # 51 vitest specs (composables + templates + completion)
+pnpm test:sidecar        # 33 pytest tests (FastAPI TestClient against the real engine)
+pnpm test:frontend       # 65 vitest specs (composables + templates + completion + sanitizeSvg)
 sidecar/.venv/bin/pytest sidecar/tests/test_smoke.py::test_png_round_trip_via_extract  # one test
 cd frontend && pnpm test:watch  # vitest in watch mode
 
@@ -62,7 +62,7 @@ browser  ──FormData──>  /api/wireviz/parse-multipart   ──>  /parse-m
 ### Frontend tests (`frontend/tests/`)
 
 Vitest with two environments:
-- **`tests/unit/*`** runs in `happy-dom` — pure module tests that need browser-shaped DOM globals (Blob, File, URL.createObjectURL, FormData) but no Nuxt context. Covers `useZipBundle` (pack / unpack / round-trip / predicates), `useWirevizCompletion` (locateScope across every YAML shape, valuePositionField with prefixes and array literals, key/value completion builders), and `templates` (every template parses as YAML, ids unique, asset URLs match files we ship, every YAML `image: src:` is in the template's bundled assets).
+- **`tests/unit/*`** runs in `happy-dom` — pure module tests that need browser-shaped DOM globals (Blob, File, URL.createObjectURL, FormData) but no Nuxt context. Covers `useZipBundle` (pack / unpack / round-trip / predicates), `useWirevizCompletion` (locateScope across every YAML shape, valuePositionField with prefixes and array literals, key/value completion builders), `templates` (every template parses as YAML, ids unique, asset URLs match files we ship, every YAML `image: src:` is in the template's bundled assets), and `sanitizeSvg`. The `sanitizeSvg` spec runs DOMPurify on a **jsdom** window, not on happy-dom: under happy-dom 20 DOMPurify leaves `xlink:href="javascript:..."` in place, so a happy-dom pass proves nothing about browsers. `sanitizeSvg.ssr.spec.ts` runs in the `node` environment to pin the SSR guard.
 - **`tests/nuxt/*`** runs in the Nuxt test environment (provides `useState`). Covers `useAssets` (add / replace / remove / clear / replaceAll / sorting / total bytes) and `buildAssetForm`. The Nuxt env's `URL.createObjectURL` is stubbed in `beforeAll` because node:buffer's strict validator doesn't accept happy-dom-shaped Blobs across realms.
 
 `vitest.config.ts` uses `pool: 'forks'` — without it the Nuxt test env leaks a Vite server after the suite finishes and breaks the exit code.
@@ -82,6 +82,7 @@ App.vue itself isn't unit-tested; it's mostly orchestration around the composabl
 - **`app.py`** — FastAPI surface. The endpoints all funnel through `_do_parse` / `_do_render_one`: `wireviz.parse(return_types="harness", image_paths=[...])` to get the in-memory `Harness`, then `harness._render((fmt, ...), yaml_source=...)` to produce bytes/strings. `bom_rows = harness.bom()` is included separately so the UI doesn't have to parse TSV. The multipart endpoints (`parse-multipart`, `render/svg-multipart`, `render/png-multipart`) spool uploaded files into a per-request `tempfile.TemporaryDirectory` and pass that to WireViz as `image_paths` — no asset state persists between requests.
 - **`__main__.py`** — uvicorn entrypoint, exposed as the `wireviz-gui-sidecar` console script. Reads `WIREVIZ_GUI_HOST` / `WIREVIZ_GUI_PORT` env vars.
 - **`tests/test_smoke.py`** — uses FastAPI's `TestClient` against the real WireViz engine (no mocks) so engine-API drift is caught here first. 16 tests covering: health, JSON parse / render, PNG iTXt round-trip, multipart parse + render with image uploads, multiple-file uploads, path-traversal sanitization (uploads with `../` in filename get basename-stripped), missing-asset 422, BOM row shape, all output formats (svg/png/tsv/html/gv).
+- **`tests/test_untrusted.py`** — the untrusted-input contract (below): a YAML body that names a server file is not read, absolute and `../` `image.src` are refused (422), `tweak` is refused, the SVG has no `onload` / `javascript:`, every size limit returns 413, non-PNG `/extract` is 400.
 
 ## Project bundle format
 
@@ -97,6 +98,16 @@ bar.jpg          ← etc — basename match against image_paths
 
 The PNG iTXt round-trip mechanism is a separate channel: rendered PNGs only carry the YAML, not the assets. To round-trip a project that references images, save as `.zip`. To share a single rendered diagram that stands on its own, the existing PNG iTXt path is fine.
 
+## Untrusted-input contract
+
+Anyone who can reach the GUI can send YAML. Treat every YAML body as hostile. Three rules:
+
+1. **The sidecar always passes `untrusted=True` to `wireviz.parse()`.** `_parse_untrusted()` in `app.py` is the only call site — never add another. In that mode the engine reads a str only as YAML text (never as a path), accepts only relative `image.src` paths inside `image_paths`, refuses `tweak`, sanitizes SVG/HTML output and puts a 30 s timeout on Graphviz. `Harness.untrusted` carries the flag into `harness._render()`. Engine error messages go to the user verbatim (they need them to fix the YAML); in untrusted mode they cannot contain server file content.
+2. **The SVG always goes through `sanitizeSvg()` (`frontend/app/utils/sanitizeSvg.ts`, DOMPurify `svg` + `svgFilters` profiles) before `v-html`.** `app.vue` binds only the `safeSvg` computed. Never bind `result.svg` or any other server string to `v-html`. On the server `sanitizeSvg()` returns `''` (no DOM), so the preview renders on the client only.
+3. **Size limits (sidecar, all HTTP 413):** request body > `MAX_REQUEST_BYTES` (YAML + uploads + 1 MiB, about 22 MB) — `BodySizeLimitMiddleware`, checked on `Content-Length` and while chunked bodies stream; YAML > `MAX_YAML_BYTES` (1 MB, same as the engine's `UNTRUSTED_MAX_INPUT_BYTES`); more than `MAX_UPLOAD_FILES` (50) uploads; more than `MAX_UPLOAD_BYTES` (20 MiB) of uploads in total (counted while they stream to disk) or a larger `/extract` PNG. Exception: a multipart `yaml` field over 1 MiB is refused by Starlette's own part limit with 400 before our check runs.
+
+The sidecar needs a WireViz engine that has `parse(..., untrusted=...)` (WireViz branch `improvement/october-2026-audit`, release 0.6.0). The `wireviz @ file:///…/WireViz` dependency is a **non-editable** copy in `sidecar/.venv`, so after the engine changes, re-run `pnpm setup:sidecar` (or `uv pip install` the engine again). Until the engine branch is merged, run the sidecar tests with `PYTHONPATH=<engine checkout>/src`.
+
 ## Load-bearing engine contracts
 
 These three behaviors come from the engine repo and **must** stay correct for the GUI to work. If the sidecar tests start failing after an engine bump, this is where to look.
@@ -109,7 +120,7 @@ These three behaviors come from the engine repo and **must** stay correct for th
 
    The sidecar always uses `_render` so PNGs round-trip. `_render` returns `{fmt: bytes|str}` — binary formats (`png`) are bytes, text formats (`svg`, `html`, `gv`, `tsv`) are str. Don't break that contract.
 
-3. **PNG → YAML round-trip via `read_yaml_from_png`.** Imported from `wireviz.Harness`. The "Open…" button relies on this. If a user uploads a PNG that wasn't rendered with `embed_yaml=True`, the sidecar returns 404 — the frontend catches that and falls through to "attach as asset" so users can drop reference images that happen to be PNG.
+3. **PNG → YAML round-trip via `read_yaml_from_png`.** Imported from `wireviz.Harness`. The "Open…" button relies on this. `read_yaml_from_png` reads raw PNG chunks only (no pixel decode) and raises ValueError for non-PNG data, which the sidecar returns as 400. If a user uploads a PNG that wasn't rendered with `embed_yaml=True`, the sidecar returns 404 — the frontend catches that and falls through to "attach as asset" so users can drop reference images that happen to be PNG.
 
 4. **Asset path resolution via `image_paths=[tmpdir]`.** WireViz resolves relative `image: src: foo.png` paths against `image_paths`. Multipart endpoints write each upload to a per-request `tempfile.TemporaryDirectory` and pass that as the only `image_paths` entry. The directory is auto-deleted when the handler returns — the sidecar holds **no** persistent asset state. If a YAML references an image that wasn't uploaded, WireViz raises and the sidecar returns 422 with the missing filename in `detail` so the UI can surface it.
 

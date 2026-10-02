@@ -18,7 +18,8 @@
       "properties": {
         "fontname": {
           "type": "string",
-          "description": "GraphViz font family. Default: arial."
+          "pattern": "^[A-Za-z0-9_][A-Za-z0-9_ ,.:+-]*$",
+          "description": "GraphViz font family (letters, digits, space and , . : + - _). Default: arial."
         },
         "bgcolor": {
           "$ref": "#/definitions/colorCode",
@@ -37,8 +38,8 @@
           "type": "boolean"
         },
         "output_dpi": {
-          "type": "number",
-          "description": "PNG output resolution. Default: 96."
+          "type": ["number", "null"],
+          "description": "Graphviz dpi. Sets PNG resolution and also scales SVG/PDF by dpi/72. Default: not set (PNG 96 dpi, SVG/PDF true size)."
         }
       }
     },

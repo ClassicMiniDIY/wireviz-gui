@@ -1,4 +1,4 @@
-"""FastAPI surface that wraps the WireViz 0.5.0 Python API for the GUI.
+"""FastAPI surface that wraps the WireViz 1.0.0 Python API for the GUI.
 
 Design notes (load-bearing — see /Users/colegentry/Development/WireViz/CLAUDE.md):
 
@@ -18,6 +18,21 @@ Design notes (load-bearing — see /Users/colegentry/Development/WireViz/CLAUDE.
   spool uploads into a per-request ``TemporaryDirectory`` and pass that
   as ``image_paths`` so user-supplied images can be picked up by the
   engine without the sidecar persisting any state across requests.
+- Untrusted input: every YAML that reaches this service comes from a
+  browser, so every ``wireviz_parse(...)`` call passes ``untrusted=True``.
+  In that mode the engine treats a str input only as YAML text (never as a
+  path), accepts only relative ``image.src`` paths that resolve inside
+  ``image_paths``, refuses ``tweak``, sanitizes the SVG and HTML output and
+  puts a timeout on Graphviz. ``Harness.untrusted`` carries the flag, so
+  ``harness._render(...)`` applies the output rules too. Engine error
+  messages still go back to the user verbatim (they need them to fix their
+  YAML); in untrusted mode they cannot contain the content of server files.
+- Size limits: ``BodySizeLimitMiddleware`` rejects any request body larger
+  than ``MAX_REQUEST_BYTES`` with 413, before or while it streams in. The
+  YAML is capped at ``MAX_YAML_BYTES`` and the uploads at
+  ``MAX_UPLOAD_FILES`` files and ``MAX_UPLOAD_BYTES`` in total, all 413.
+  Uploads are copied to disk in chunks through a byte counter, never read
+  into memory in full.
 """
 
 from __future__ import annotations
@@ -34,11 +49,71 @@ from fastapi import FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, Response
 from pydantic import BaseModel, Field
+from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
 from wireviz.wireviz import parse as wireviz_parse
 from wireviz.Harness import Harness, read_yaml_from_png
 
 log = logging.getLogger("wireviz_gui_sidecar")
+
+# Request size limits. MAX_YAML_BYTES matches the engine's
+# UNTRUSTED_MAX_INPUT_BYTES; checking it here gives the user a 413 instead
+# of the engine's 422.
+MAX_YAML_BYTES = 1_000_000
+MAX_UPLOAD_BYTES = 20 * 1024 * 1024
+MAX_UPLOAD_FILES = 50
+# Whole request body: YAML + uploads + 1 MiB for multipart framing and
+# the small form fields.
+MAX_REQUEST_BYTES = MAX_YAML_BYTES + MAX_UPLOAD_BYTES + 1024 * 1024
+
+
+class BodySizeLimitMiddleware:
+    """Reject HTTP request bodies larger than ``max_bytes`` with 413.
+
+    A declared ``Content-Length`` above the limit is refused before the
+    body is read. Bodies without one (chunked) are counted while they
+    stream in; the HTTPException raised from ``receive`` reaches FastAPI's
+    exception handler, which answers 413.
+    """
+
+    def __init__(self, app: ASGIApp, max_bytes: int) -> None:
+        self.app = app
+        self.max_bytes = max_bytes
+
+    async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
+        if scope["type"] != "http":
+            await self.app(scope, receive, send)
+            return
+
+        detail = f"Request body is larger than the limit of {self.max_bytes} bytes"
+        for name, value in scope.get("headers", []):
+            if name == b"content-length" and value.isdigit():
+                if int(value) > self.max_bytes:
+                    await JSONResponse({"detail": detail}, status_code=413)(
+                        scope, receive, send
+                    )
+                    return
+
+        received = 0
+
+        async def limited_receive() -> Message:
+            nonlocal received
+            message = await receive()
+            if message["type"] == "http.request":
+                received += len(message.get("body", b""))
+                if received > self.max_bytes:
+                    raise HTTPException(413, detail)
+            return message
+
+        await self.app(scope, limited_receive, send)
+
+
+def _check_yaml_size(yaml_src: str) -> None:
+    size = len(yaml_src.encode("utf-8"))
+    if size > MAX_YAML_BYTES:
+        raise HTTPException(
+            413, f"YAML is {size} bytes; the limit is {MAX_YAML_BYTES} bytes"
+        )
 
 
 class ParseRequest(BaseModel):
@@ -82,25 +157,11 @@ def _do_parse(
     bad = [f for f in formats if f not in _VALID_FORMATS]
     if bad:
         raise HTTPException(400, f"Unsupported formats: {bad}")
+    _check_yaml_size(yaml_src)
 
-    try:
-        harness: Harness = wireviz_parse(
-            yaml_src,
-            return_types="harness",
-            output_formats=None,
-            output_name="harness",
-            embed_yaml=embed_yaml,
-            image_paths=list(image_paths or []),
-        )
-    except Exception as exc:
-        log.exception("wireviz.parse failed")
-        raise HTTPException(422, f"WireViz parse error: {exc}") from exc
-
-    rendered: dict[str, Any] = harness._render(
-        tuple(formats),
-        output_dir=None,
-        output_name="harness",
-        yaml_source=yaml_src if embed_yaml else None,
+    harness = _parse_untrusted(yaml_src, embed_yaml, image_paths)
+    rendered: dict[str, Any] = _render_untrusted(
+        harness, tuple(formats), yaml_src if embed_yaml else None
     )
 
     try:
@@ -125,22 +186,51 @@ def _do_render_one(
     embed_yaml: bool,
     image_paths: list[str] | None = None,
 ) -> Any:
+    _check_yaml_size(yaml_src)
+    harness = _parse_untrusted(yaml_src, embed_yaml, image_paths)
+    out = _render_untrusted(harness, (fmt,), yaml_src if embed_yaml else None)
+    return out[fmt]
+
+
+def _parse_untrusted(
+    yaml_src: str, embed_yaml: bool, image_paths: list[str] | None
+) -> Harness:
+    """The only place the sidecar calls ``wireviz.parse()``.
+
+    ``untrusted=True`` is mandatory: the YAML comes from a browser. The
+    engine's message goes back to the user (422) so they can fix the YAML.
+    """
     try:
-        harness: Harness = wireviz_parse(
+        return wireviz_parse(
             yaml_src,
             return_types="harness",
+            output_formats=None,
             output_name="harness",
             embed_yaml=embed_yaml,
             image_paths=list(image_paths or []),
+            untrusted=True,
         )
     except Exception as exc:
+        log.exception("wireviz.parse failed")
         raise HTTPException(422, f"WireViz parse error: {exc}") from exc
-    out = harness._render(
-        (fmt,),
-        output_name="harness",
-        yaml_source=yaml_src if embed_yaml else None,
-    )
-    return out[fmt]
+
+
+def _render_untrusted(
+    harness: Harness, formats: tuple[str, ...], yaml_source: str | None
+) -> dict[str, Any]:
+    """Render in memory. ``harness.untrusted`` is True, so the engine
+    sanitizes SVG/HTML and puts a timeout on Graphviz. Those checks raise
+    ValueError (or a timeout error), which the user sees as 422."""
+    try:
+        return harness._render(
+            formats,
+            output_dir=None,
+            output_name="harness",
+            yaml_source=yaml_source,
+        )
+    except Exception as exc:
+        log.exception("Harness._render failed")
+        raise HTTPException(422, f"WireViz render error: {exc}") from exc
 
 
 def _spool_assets_to_tempdir(files: list[UploadFile]) -> tempfile.TemporaryDirectory:
@@ -154,20 +244,58 @@ def _spool_assets_to_tempdir(files: list[UploadFile]) -> tempfile.TemporaryDirec
     paths line up against the directory contents. Paths are sanitised
     to a basename (no traversal) and rejected if the resulting name is
     empty.
+
+    More than ``MAX_UPLOAD_FILES`` files, or more than ``MAX_UPLOAD_BYTES``
+    in total, is refused with 413 and the tempdir is removed.
     """
+    if len(files) > MAX_UPLOAD_FILES:
+        raise HTTPException(
+            413, f"{len(files)} files uploaded; the limit is {MAX_UPLOAD_FILES}"
+        )
     td = tempfile.TemporaryDirectory(prefix="wireviz-gui-")
-    for upload in files:
-        name = Path(upload.filename or "").name
-        if not name:
-            raise HTTPException(400, "Asset upload missing a filename.")
-        target = Path(td.name) / name
-        # Stream the upload to disk in chunks rather than .read()ing the
-        # full payload into memory first. Matters when users attach
-        # multi-MB photos / scans — we don't want a single request to be
-        # able to allocate hundreds of MB on the sidecar.
-        with target.open("wb") as fh:
-            shutil.copyfileobj(upload.file, fh)
+    budget = _UploadBudget(MAX_UPLOAD_BYTES)
+    try:
+        for upload in files:
+            name = Path(upload.filename or "").name
+            if not name:
+                raise HTTPException(400, "Asset upload missing a filename.")
+            target = Path(td.name) / name
+            # Stream the upload to disk in chunks rather than .read()ing the
+            # full payload into memory first. The counting writer stops the
+            # copy as soon as the total passes the limit.
+            with target.open("wb") as fh:
+                shutil.copyfileobj(upload.file, _CountingWriter(fh, budget))
+    except BaseException:
+        td.cleanup()
+        raise
     return td
+
+
+class _UploadBudget:
+    """Byte budget shared by every upload in one request."""
+
+    def __init__(self, limit: int) -> None:
+        self.limit = limit
+        self.used = 0
+
+    def spend(self, n: int) -> None:
+        self.used += n
+        if self.used > self.limit:
+            raise HTTPException(
+                413, f"Uploads are larger than the limit of {self.limit} bytes"
+            )
+
+
+class _CountingWriter:
+    """File wrapper that charges every write against an ``_UploadBudget``."""
+
+    def __init__(self, fh: Any, budget: _UploadBudget) -> None:
+        self._fh = fh
+        self._budget = budget
+
+    def write(self, data: bytes) -> int:
+        self._budget.spend(len(data))
+        return self._fh.write(data)
 
 
 def create_app() -> FastAPI:
@@ -176,6 +304,8 @@ def create_app() -> FastAPI:
         version="0.2.0",
         description="HTTP wrapper around wireviz.parse() for the Nuxt frontend.",
     )
+
+    app.add_middleware(BodySizeLimitMiddleware, max_bytes=MAX_REQUEST_BYTES)
 
     # The Nuxt dev server runs on a different port; allow it to call us
     # directly during development. In production the frontend proxies
@@ -267,8 +397,15 @@ def create_app() -> FastAPI:
 
         Relies on the ``wireviz:yaml`` iTXt chunk written by
         ``_embed_yaml_in_png`` during a render with ``embed_yaml=True``.
+        ``read_yaml_from_png`` reads only the raw PNG chunks (no pixel
+        decode) and raises ValueError for data that is not a PNG; that
+        is a 400.
         """
-        data = await file.read()
+        data = await file.read(MAX_UPLOAD_BYTES + 1)
+        if len(data) > MAX_UPLOAD_BYTES:
+            raise HTTPException(
+                413, f"PNG is larger than the limit of {MAX_UPLOAD_BYTES} bytes"
+            )
         try:
             yaml_source = read_yaml_from_png(io.BytesIO(data))
         except Exception as exc:

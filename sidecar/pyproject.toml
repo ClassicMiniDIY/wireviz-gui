@@ -1,7 +1,7 @@
 [project]
 name = "wireviz-gui-sidecar"
 version = "0.1.0"
-description = "FastAPI sidecar wrapping wireviz 0.5.0 for the wireviz-gui frontend"
+description = "FastAPI sidecar wrapping wireviz 1.0.0 for the wireviz-gui frontend"
 requires-python = ">=3.10"
 dependencies = [
     "fastapi>=0.115",
