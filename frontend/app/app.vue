@@ -168,7 +168,7 @@
           </div>
         </div>
         <div class="preview-body">
-          <div v-if="result?.svg" class="svg-host" v-html="result.svg" />
+          <div v-if="safeSvg" class="svg-host" v-html="safeSvg" />
           <div v-else-if="busy" class="empty-state">
             <i class="fas fa-circle-notch fa-spin big-icon" />
             <p>Rendering harness…</p>
@@ -203,6 +203,7 @@ import {
   packBundle,
   unpackBundle,
 } from '~/composables/useZipBundle'
+import { sanitizeSvg } from '~/utils/sanitizeSvg'
 
 const yamlSource = ref(`connectors:
   X1:
@@ -242,6 +243,11 @@ const downloadingPng = ref(false)
 const savingProject = ref(false)
 const error = ref<string | null>(null)
 const result = ref<ParseResult | null>(null)
+
+// The only value that may reach `v-html`. The SVG comes from user YAML,
+// so it always goes through DOMPurify first (see utils/sanitizeSvg.ts).
+// On the server this is '' — the preview renders on the client only.
+const safeSvg = computed(() => (result.value?.svg ? sanitizeSvg(result.value.svg) : ''))
 
 const { theme, toggle: toggleTheme } = useTheme()
 const assets = useAssets()
