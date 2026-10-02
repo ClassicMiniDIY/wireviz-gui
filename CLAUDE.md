@@ -15,7 +15,7 @@ The engine repo lives next to this one at `../WireViz` (absolute: `/Users/colege
 
 ```bash
 # First-time setup
-pnpm setup:sidecar       # uv venv at sidecar/.venv (Python 3.12) + editable wireviz install
+pnpm setup:sidecar       # uv venv at sidecar/.venv (Python 3.12) + sidecar install; re-run after engine changes
 pnpm setup:frontend      # pnpm install for Nuxt
 
 # Day-to-day
@@ -104,9 +104,9 @@ Anyone who can reach the GUI can send YAML. Treat every YAML body as hostile. Th
 
 1. **The sidecar always passes `untrusted=True` to `wireviz.parse()`.** `_parse_untrusted()` in `app.py` is the only call site — never add another. In that mode the engine reads a str only as YAML text (never as a path), accepts only relative `image.src` paths inside `image_paths`, refuses `tweak`, sanitizes SVG/HTML output and puts a 30 s timeout on Graphviz. `Harness.untrusted` carries the flag into `harness._render()`. Engine error messages go to the user verbatim (they need them to fix the YAML); in untrusted mode they cannot contain server file content.
 2. **The SVG always goes through `sanitizeSvg()` (`frontend/app/utils/sanitizeSvg.ts`, DOMPurify `svg` + `svgFilters` profiles) before `v-html`.** `app.vue` binds only the `safeSvg` computed. Never bind `result.svg` or any other server string to `v-html`. On the server `sanitizeSvg()` returns `''` (no DOM), so the preview renders on the client only.
-3. **Size limits (sidecar, all HTTP 413):** request body > `MAX_REQUEST_BYTES` (YAML + uploads + 1 MiB, about 22 MB) — `BodySizeLimitMiddleware`, checked on `Content-Length` and while chunked bodies stream; YAML > `MAX_YAML_BYTES` (1 MB, same as the engine's `UNTRUSTED_MAX_INPUT_BYTES`); more than `MAX_UPLOAD_FILES` (50) uploads; more than `MAX_UPLOAD_BYTES` (20 MiB) of uploads in total (counted while they stream to disk) or a larger `/extract` PNG. Exception: a multipart `yaml` field over 1 MiB is refused by Starlette's own part limit with 400 before our check runs.
+3. **Size limits (sidecar, all HTTP 413):** request body > `MAX_REQUEST_BYTES` (YAML + uploads + 1 MiB, about 22 MB) — `BodySizeLimitMiddleware`, checked on `Content-Length` and while chunked bodies stream; YAML > `MAX_YAML_BYTES` (1 MB, same as the engine's `UNTRUSTED_MAX_INPUT_BYTES`); more than `MAX_UPLOAD_FILES` (50) uploads; more than `MAX_UPLOAD_BYTES` (20 MiB) of uploads in total (counted while they stream to disk) or a larger `/extract` PNG. **Nitro proxy (411/413):** `server/middleware/body-limit.ts` refuses `/api/wireviz/*` bodies over the same `MAX_REQUEST_BYTES` before a proxy route reads them into memory, and refuses requests without a `Content-Length` (chunked) with 411. Keep `server/utils/bodyLimit.ts` in step with the sidecar limits. Exception: a multipart `yaml` field over 1 MiB is refused by Starlette's own part limit with 400 before our check runs.
 
-The sidecar needs a WireViz engine that has `parse(..., untrusted=...)` (WireViz branch `improvement/october-2026-audit`, release 0.6.0). The `wireviz @ file:///…/WireViz` dependency is a **non-editable** copy in `sidecar/.venv`, so after the engine changes, re-run `pnpm setup:sidecar` (or `uv pip install` the engine again). Until the engine branch is merged, run the sidecar tests with `PYTHONPATH=<engine checkout>/src`.
+The sidecar needs WireViz 1.0.0 or later (`parse(..., untrusted=...)`). The `wireviz @ file:///…/WireViz` dependency is a **non-editable** copy in `sidecar/.venv`, so after the engine changes, re-run `pnpm setup:sidecar`. It is safe to re-run: `uv venv --allow-existing` keeps the venv and `--reinstall-package wireviz` copies the engine again.
 
 ## Load-bearing engine contracts
 
