@@ -11,7 +11,7 @@
     "test": "pnpm test:sidecar && pnpm test:frontend",
     "test:sidecar": "cd sidecar && .venv/bin/pytest",
     "test:frontend": "cd frontend && pnpm test",
-    "setup:sidecar": "cd sidecar && uv venv --python 3.12 .venv && .venv/bin/uv pip install -e \".[dev]\"",
+    "setup:sidecar": "cd sidecar && uv venv --allow-existing --python 3.12 .venv && uv pip install --python .venv/bin/python --reinstall-package wireviz -e \".[dev]\"",
     "setup:frontend": "cd frontend && pnpm install"
   },
   "devDependencies": {
