@@ -1,4 +1,4 @@
-"""FastAPI surface that wraps the WireViz 0.5.0 Python API for the GUI.
+"""FastAPI surface that wraps the WireViz 1.0.0 Python API for the GUI.
 
 Design notes (load-bearing — see /Users/colegentry/Development/WireViz/CLAUDE.md):
 

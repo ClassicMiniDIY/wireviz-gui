@@ -7,7 +7,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 A two-process desktop-style web app that turns [WireViz](https://github.com/ClassicMiniDIY/WireViz) YAML into rendered harness diagrams interactively:
 
 - **`frontend/`** — Nuxt 4 (compatibilityDate `2025-07-15`). Single-page editor + diagram preview. Nitro server routes under `server/api/wireviz/*` proxy to the sidecar so the sidecar URL is server-only and CORS doesn't fire in production.
-- **`sidecar/`** — Python FastAPI service (`wireviz_gui_sidecar`) that imports WireViz 0.5.0 as a library. Listens on `127.0.0.1:8765` by default. This is the **only** place WireViz is loaded.
+- **`sidecar/`** — Python FastAPI service (`wireviz_gui_sidecar`) that imports WireViz 1.0.0 as a library. Listens on `127.0.0.1:8765` by default. This is the **only** place WireViz is loaded.
 
 The engine repo lives next to this one at `../WireViz` (absolute: `/Users/colegentry/Development/WireViz`) and is installed editably — its `CLAUDE.md` documents the engine internals and is required reading before changing anything that crosses the API boundary.
 

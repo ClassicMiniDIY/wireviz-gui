@@ -184,7 +184,7 @@
     <footer class="site-footer">
       <p>
         <strong>WireViz GUI</strong> — wraps
-        <a href="https://github.com/ClassicMiniDIY/WireViz" target="_blank" rel="noopener">WireViz 0.5.0</a>
+        <a href="https://github.com/ClassicMiniDIY/WireViz" target="_blank" rel="noopener">WireViz 1.0.0</a>
         for interactive harness editing. A passion-project tool aligned with the
         <a href="https://classicminidiy.com" target="_blank" rel="noopener">Classic Mini DIY</a>
         YouTube channel and ecosystem.

@@ -1,6 +1,6 @@
 # wireviz-gui
 
-A Nuxt 4 frontend + Python FastAPI sidecar that wraps [WireViz 0.5.0](https://github.com/ClassicMiniDIY/WireViz/releases/tag/v0.5.0) for interactive harness editing.
+A Nuxt 4 frontend + Python FastAPI sidecar that wraps [WireViz 1.0.0](https://github.com/ClassicMiniDIY/WireViz/releases/tag/v1.0.0) for interactive harness editing.
 
 ## Architecture
 
@@ -11,7 +11,7 @@ A Nuxt 4 frontend + Python FastAPI sidecar that wraps [WireViz 0.5.0](https://gi
 |                    |  <----- SVG / PNG / BOM / YAML ---- |  wraps wireviz.parse  |
 +--------------------+                                     +-----------------------+
         |                                                          |
-        | Nitro server routes proxy under /api/wireviz/*           | imports wireviz==0.5.0
+        | Nitro server routes proxy under /api/wireviz/*           | imports wireviz==1.0.0
         | so the sidecar URL never leaks to the browser bundle.    | from a local editable install
 ```
 
