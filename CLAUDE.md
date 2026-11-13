@@ -23,15 +23,16 @@ pnpm dev                 # both processes via concurrently: sidecar :8765, Nuxt 
 pnpm dev:sidecar         # uvicorn --reload only
 pnpm dev:frontend        # nuxt dev only
 
-# Tests (sidecar + frontend, 98 total)
+# Tests (sidecar + frontend, 104 total)
 pnpm test                # both runners
 pnpm test:sidecar        # 33 pytest tests (FastAPI TestClient against the real engine)
-pnpm test:frontend       # 65 vitest specs (composables + templates + completion + sanitizeSvg)
+pnpm test:frontend       # 71 vitest specs (composables + templates + completion + sanitizeSvg + bodyLimit)
 sidecar/.venv/bin/pytest sidecar/tests/test_smoke.py::test_png_round_trip_via_extract  # one test
 cd frontend && pnpm test:watch  # vitest in watch mode
 
-# Production build
-pnpm build               # nuxt build (also typechecks the server routes)
+# Typecheck + production build
+pnpm typecheck           # nuxt typecheck (vue-tsc, TypeScript 6 — vue-tsc does not run on TS 7 yet)
+pnpm build               # nuxt build
 ```
 
 `graphviz` (the `dot` binary) must be on `PATH` — the sidecar shells out via the `graphviz` Python package. WireViz is pinned to a local path in `sidecar/pyproject.toml` (`wireviz @ file:///Users/colegentry/Development/WireViz`); change that line and re-run `pnpm setup:sidecar` to point at a different checkout.
@@ -131,3 +132,10 @@ These three behaviors come from the engine repo and **must** stay correct for th
 - **Don't write rendered files to disk in the sidecar.** Always `output_formats=None`, `return_types="harness"`, then `_render` for in-memory output. The sidecar is stateless.
 - **Keep error envelopes thin.** FastAPI `HTTPException(detail=...)` propagates to `err.data.detail` in the browser; the UI renders that verbatim. Don't wrap it in extra layers.
 - **Run the smoke tests after any engine bump.** `pnpm test:sidecar` catches most signature/contract drift in `wireviz.parse()` and `Harness._render`.
+
+## CI and dependency invariants
+
+- **CI (`.github/workflows/ci.yml`) has two jobs, `Web` and `Python`.** The job names are the required status checks for `main`; renaming a job breaks branch protection. `Web` runs `pnpm install --frozen-lockfile` (root and `frontend/`), `typecheck`, `test` and `build`. `Python` runs pytest. There is no lint step: the repo has no ESLint config.
+- **CI cannot use the local WireViz path.** `sidecar/pyproject.toml` pins `wireviz @ file:///Users/colegentry/...`, which does not exist on a runner. The `Python` job installs with `uv pip install --override` and swaps in `wireviz @ git+https://github.com/ClassicMiniDIY/WireViz@<tag>` (the `WIREVIZ_SPEC` env in the workflow). Bump that tag when the sidecar needs a newer engine.
+- **`frontend/pnpm-workspace.yaml` is settings-only.** It holds `overrides` (YAML, so each override carries its reason). Today: `monaco-editor>dompurify`, because monaco-editor pins a vulnerable dompurify. Remove an override as soon as the parent package ships a fixed version. The two lockfiles (root and `frontend/`) are separate pnpm projects; Dependabot updates both.
+- **Sidecar version floors are security floors.** The `>=` floors in `sidecar/pyproject.toml` (pillow, python-multipart, starlette, h11, pytest) sit at the first release that clears known advisories. Do not lower them.
