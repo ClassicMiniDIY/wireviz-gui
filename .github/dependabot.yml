@@ -1,0 +1,38 @@
+version: 2
+
+updates:
+  # Two pnpm projects: the root (concurrently only) and the Nuxt app.
+  # Dependabot's npm ecosystem reads pnpm-lock.yaml.
+  - package-ecosystem: npm
+    directories:
+      - /
+      - /frontend
+    schedule:
+      interval: monthly
+    commit-message:
+      prefix: 'chore(deps)'
+    groups:
+      npm:
+        patterns: ['*']
+
+  # FastAPI sidecar (PEP 621 pyproject.toml, no lockfile). The local
+  # `wireviz @ file:///...` engine dependency is not updatable here.
+  - package-ecosystem: pip
+    directory: /sidecar
+    schedule:
+      interval: monthly
+    commit-message:
+      prefix: 'chore(deps)'
+    groups:
+      pip:
+        patterns: ['*']
+
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: monthly
+    commit-message:
+      prefix: 'chore(deps)'
+    groups:
+      github-actions:
+        patterns: ['*']
