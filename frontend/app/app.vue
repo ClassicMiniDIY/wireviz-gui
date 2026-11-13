@@ -348,9 +348,9 @@ onBeforeUnmount(() => {
   hoverDispose?.()
 })
 
-const { data: health } = await useFetch<{ wireviz: string }>('/api/wireviz/health', {
-  default: () => null,
-})
+// No `default`: data stays undefined when the sidecar is down, which the
+// `v-if="health"` badge treats the same as null.
+const { data: health } = await useFetch<{ wireviz: string }>('/api/wireviz/health')
 
 // ---- Render: multipart when assets present, JSON otherwise -------------
 
