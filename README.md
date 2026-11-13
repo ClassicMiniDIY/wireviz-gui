@@ -34,8 +34,8 @@ PNG iTXt round-trip (rendered PNG carrying the YAML in its metadata) is the ligh
 ## Prerequisites
 
 - **Graphviz** on `PATH` (`dot -V`)
-- **Node 20+** with `pnpm`
-- **Python 3.10+** with `uv` (or use a regular venv)
+- **Node 22+** with `pnpm`
+- **Python 3.11+** with `uv` (or use a regular venv)
 - A local checkout of WireViz at `/Users/colegentry/Development/WireViz` — the sidecar's `pyproject.toml` installs it via `file://` URL. Update the path if you cloned WireViz elsewhere.
 
 ## First-time setup

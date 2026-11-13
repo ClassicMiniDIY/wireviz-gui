@@ -1,0 +1,85 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  web:
+    name: Web
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v7
+
+      # Version comes from `packageManager` in the root package.json.
+      - uses: pnpm/action-setup@v6
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 26
+          cache: pnpm
+          cache-dependency-path: |
+            pnpm-lock.yaml
+            frontend/pnpm-lock.yaml
+
+      - name: Install root (concurrently)
+        working-directory: .
+        run: pnpm install --frozen-lockfile
+
+      - name: Install frontend
+        run: pnpm install --frozen-lockfile
+
+      - name: Typecheck
+        run: pnpm typecheck
+
+      - name: Test
+        run: pnpm test
+
+      - name: Build
+        run: pnpm build
+
+  python:
+    name: Python
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: sidecar
+    env:
+      # sidecar/pyproject.toml points wireviz at a local checkout
+      # (file:///Users/...), which does not exist on a runner. CI swaps in
+      # the public engine repo at a release tag through a uv override.
+      WIREVIZ_SPEC: wireviz @ git+https://github.com/ClassicMiniDIY/WireViz@v1.1.0
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Install Graphviz
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends graphviz
+
+      - uses: astral-sh/setup-uv@v10.3.3
+        with:
+          python-version: '3.12'
+          enable-cache: true
+          cache-dependency-glob: sidecar/pyproject.toml
+
+      - name: Install sidecar
+        run: |
+          echo "$WIREVIZ_SPEC" > "$RUNNER_TEMP/wireviz-override.txt"
+          uv venv --python 3.12 .venv
+          uv pip install --python .venv/bin/python \
+            --override "$RUNNER_TEMP/wireviz-override.txt" -e ".[dev]"
+
+      - name: Pytest
+        run: .venv/bin/pytest
