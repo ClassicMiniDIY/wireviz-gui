@@ -15,7 +15,7 @@
     "setup:frontend": "cd frontend && pnpm install"
   },
   "devDependencies": {
-    "concurrently": "^9.1.0"
+    "concurrently": "^10.0.7"
   },
   "packageManager": "pnpm@10.6.2"
 }
