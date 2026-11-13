@@ -1,0 +1,10 @@
+# Settings-only workspace file: frontend/ is a single package, not a
+# monorepo. pnpm 10 reads `overrides` from here, and YAML lets each
+# override carry the reason it exists.
+
+overrides:
+  # monaco-editor (peer of nuxt-monaco-editor) pins dompurify to an exact
+  # version. monaco-editor 0.57.0, the latest, pins 3.4.15, which has
+  # critical/high advisories fixed in 3.4.17. No monaco-editor release
+  # pulls a fixed dompurify yet. Drop this when it does.
+  monaco-editor>dompurify: ^3.4.17
