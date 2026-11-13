@@ -9,10 +9,13 @@ export default defineEventHandler(async (event) => {
   }
 
   const file = parts.find((p) => p.name === 'file') ?? parts[0]
+  if (!file) {
+    throw createError({ statusCode: 400, statusMessage: 'No file uploaded' })
+  }
   const form = new FormData()
   form.append(
     'file',
-    new Blob([file.data], { type: file.type ?? 'image/png' }),
+    new Blob([asBlobPart(file.data)], { type: file.type ?? 'image/png' }),
     file.filename ?? 'upload.png',
   )
 

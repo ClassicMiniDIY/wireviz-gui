@@ -18,7 +18,7 @@ export default defineEventHandler(async (event) => {
     if (p.filename) {
       form.append(
         p.name ?? 'files',
-        new Blob([p.data], { type: p.type ?? 'application/octet-stream' }),
+        new Blob([asBlobPart(p.data)], { type: p.type ?? 'application/octet-stream' }),
         p.filename,
       )
     } else {
